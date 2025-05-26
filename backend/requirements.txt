@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+pydub
+librosa
+httpx
+python-dotenv
+pyttsx3
+wikipedia-api 
