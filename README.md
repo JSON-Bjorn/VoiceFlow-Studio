@@ -1,6 +1,79 @@
 # VoiceFlow Studio
 
-VoiceFlow Studio is an AI-powered podcast generation platform currently under development. The goal is to make professional-quality podcast creation accessible to everyone, allowing users to generate engaging audio content from a simple text prompt.
+This project is a full-scale, AI-powered podcast generation platform. See `prd.txt` for the full product requirements.
+
+## Current Project Flow
+
+### Backend (FastAPI)
+- **Status:** The backend is modularized and partially functional.
+- **What works:**
+  - The FastAPI server starts and exposes the following endpoints:
+    - `/` — Returns a JSON message confirming the backend is running.
+    - `/test_import` — Tests Wikipedia API integration and returns a summary of the Python programming language.
+    - `/generate_podcast` — Accepts a topic and returns a generated podcast script (requires OpenAI API key in environment).
+    - `/generate_audio` — Accepts a script and returns a WAV file using local TTS (pyttsx3).
+- **What is stubbed/not yet implemented:**
+  - User registration, login, authentication (API stubs only)
+  - Payment/Stripe integration (API stubs only)
+  - Admin endpoints (API stubs only)
+  - Podcast credit management
+  - Full agent pipeline (Script Agent, Voice Agent, Audio Agent)
+
+### Frontend (React)
+- **Status:** The frontend is scaffolded with all main pages/components as stubs.
+- **What works:**
+  - Navigation between stub pages: Registration, Login, Dashboard, Podcast Generation, Payment, Admin, Example Podcast Library.
+- **What is not yet functional:**
+  - No real backend integration or user flows implemented yet.
+
+## How to Build and Run the Project (Docker)
+
+1. **Build the full project (backend + frontend) from the root directory:**
+   ```bash
+   docker build -t voiceflow-studio .
+   ```
+2. **Run the container:**
+   ```bash
+   docker run -p 8000:8000 -p 3000:3000 voiceflow-studio
+   ```
+   - The backend will be available at [http://localhost:8000](http://localhost:8000)
+   - The frontend will be available at [http://localhost:3000](http://localhost:3000)
+
+## How to Run the Backend or Frontend Separately (Development)
+
+- **Backend:**
+  ```bash
+  cd backend
+  uvicorn main:app --reload
+  ```
+- **Frontend:**
+  ```bash
+  cd frontend
+  npm install
+  npm start
+  ```
+
+## Project Structure
+
+- `backend/` - FastAPI backend with modular agent pipeline
+- `frontend/` - React frontend with user dashboard, payment, and podcast generation
+- `Dockerfile` - Root Dockerfile to build and run both backend and frontend
+- `supervisord.conf` - Supervisor config to run both services in one container
+- `prd.txt` - Product requirements document
+- `tasks.txt` - Project task tracking
+- `.env`, `.gitignore`, `README.md`, etc.
+
+**Note:**
+- The `backend/compose.yml` file is deprecated and can be deleted. The root Dockerfile now handles multi-service builds and runs.
+
+## Key Features (Planned)
+- User registration, login, dashboard
+- Payment integration (Stripe)
+- Podcast generation using OpenAI and ElevenLabs
+- Example podcast library
+- Admin dashboard
+
+See the PRD for more details and the current `tasks.txt` for up-to-date progress and next steps.
 
 ## Project Vision
 VoiceFlow Studio aims to democratize podcast creation by enabling anyone to generate professional, engaging audio content through AI. Users will input a topic and receive a complete podcast episode featuring a natural conversation between two AI hosts.

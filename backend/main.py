@@ -8,6 +8,8 @@ import wikipediaapi
 from pydub import AudioSegment
 import traceback
 import sys
+from orchestrator import ResearchAgent, ConversationOrchestrator
+from app.api import auth, payment, podcast, admin
 
 app = FastAPI()
 
@@ -48,25 +50,12 @@ def test_import():
 def generate_podcast(request: PodcastRequest):
     try:
         topic = request.topic
-        # Fetch Wikipedia summary
-        wiki = wikipediaapi.Wikipedia(
-            user_agent="voiceflow-studio/1.0 (contact@example.com)", language="en"
+        research_agent = ResearchAgent()
+        subtopics, summaries = research_agent.get_subtopics_and_summaries(
+            topic, max_subtopics=5
         )
-        page = wiki.page(topic)
-        summary = (
-            page.summary[0:400]
-            if page.exists()
-            else "Sorry, I couldn't find information on that topic."
-        )
-        # Simulated multi-turn conversation with facts
-        script = f"""
-Björn: Welcome to our podcast! Today we're talking about {topic}. I'm really curious about this topic, Felix. Can you tell us what it's all about?
-Felix: Absolutely, Björn. {topic} is a fascinating subject. Here's a quick summary: {summary}
-Björn: That's interesting! But why is {topic} important nowadays?
-Felix: Great question. As mentioned, {topic} has become increasingly relevant because of recent developments. For example, {summary.split(".")[0]}.
-Björn: Wow, I didn't know that! Are there any common misconceptions about {topic}?
-Felix: Yes, there are a few. One big misconception is... But in reality, it's more accurate to say... Also, according to Wikipedia: {summary.split(".")[1] if "." in summary else summary}
-"""
+        orchestrator = ConversationOrchestrator(topic, subtopics, summaries)
+        script = orchestrator.generate_full_script()
         return {"script": script.strip()}
     except Exception as e:
         print("Exception in /generate_podcast:", flush=True)
@@ -112,3 +101,9 @@ def generate_audio(request: AudioRequest):
         if os.path.exists(f):
             os.remove(f)
     return FileResponse(filepath, media_type="audio/wav", filename=filename)
+
+
+app.include_router(auth.router)
+app.include_router(payment.router)
+app.include_router(podcast.router)
+app.include_router(admin.router)

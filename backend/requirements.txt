@@ -1,5 +1,9 @@
 fastapi
 uvicorn
+redis
+stripe
+openai
+elevenlabs
 pydub
 librosa
 httpx

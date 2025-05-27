@@ -1,2 +1,6 @@
 prd.pdf
 prd.txt
+.env
+env
+*.env
+tasks.txt
