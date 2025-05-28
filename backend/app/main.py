@@ -8,7 +8,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import API routes
-from app.api import auth, users, credits, podcasts
+from app.api import auth, users, credits, podcasts, stripe_api
 
 # Load environment variables
 load_dotenv()
@@ -33,6 +33,7 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 app.include_router(credits.router, prefix="/api")
 app.include_router(podcasts.router)
+app.include_router(stripe_api.router)
 
 
 @app.get("/")

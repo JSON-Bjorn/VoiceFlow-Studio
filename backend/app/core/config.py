@@ -20,6 +20,7 @@ class Settings(BaseSettings):
 
     # Stripe
     stripe_secret_key: Optional[str] = os.getenv("STRIPE_SECRET_KEY")
+    stripe_publishable_key: Optional[str] = os.getenv("STRIPE_PUBLISHABLE_KEY")
     stripe_webhook_secret: Optional[str] = os.getenv("STRIPE_WEBHOOK_SECRET")
 
     # AWS S3

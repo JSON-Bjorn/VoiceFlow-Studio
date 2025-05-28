@@ -319,19 +319,33 @@ class ApiClient {
     }
 
     async simulatePodcastGeneration(id: number): Promise<Podcast> {
-        const response = await fetch(`${this.baseUrl}/api/podcasts/${id}/generate`, {
+        return this.request<Podcast>(`/api/podcasts/${id}/generate`, {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${this.token}`,
-            },
         })
+    }
 
-        if (!response.ok) {
-            throw new Error('Failed to generate podcast')
-        }
+    // Stripe payment endpoints
+    async getStripeConfig(): Promise<{ publishable_key: string }> {
+        return this.request<{ publishable_key: string }>('/api/stripe/config')
+    }
 
-        return response.json()
+    async getCreditBundles(): Promise<CreditBundle[]> {
+        return this.request<CreditBundle[]>('/api/stripe/bundles')
+    }
+
+    async createPaymentIntent(bundle: string): Promise<PaymentIntentResponse> {
+        return this.request<PaymentIntentResponse>('/api/stripe/create-payment-intent', {
+            method: 'POST',
+            body: JSON.stringify({ bundle }),
+        })
+    }
+
+    async getPaymentStatus(paymentIntentId: string): Promise<PaymentStatus> {
+        return this.request<PaymentStatus>(`/api/stripe/payment-status/${paymentIntentId}`)
     }
 }
 
-export const apiClient = new ApiClient() 
+// Import types for Stripe
+import type { CreditBundle, PaymentIntentResponse, PaymentStatus } from './stripe'
+
+export const api = new ApiClient() 

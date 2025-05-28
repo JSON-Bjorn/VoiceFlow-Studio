@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { CreditBalance } from '@/components/ui/credit-balance'
 import { Mic, ArrowLeft, CreditCard, Plus, History } from 'lucide-react'
-import { apiClient, User as UserType, CreditSummary, CreditTransaction } from '@/lib/api'
+import { api, User as UserType, CreditSummary, CreditTransaction } from '@/lib/api'
 
 export default function CreditsPage() {
     const router = useRouter()
@@ -20,13 +20,13 @@ export default function CreditsPage() {
     useEffect(() => {
         const loadData = async () => {
             try {
-                const userData = await apiClient.getCurrentUser()
+                const userData = await api.getCurrentUser()
                 setUser(userData)
 
-                const summary = await apiClient.getCreditSummary()
+                const summary = await api.getCreditSummary()
                 setCreditSummary(summary)
 
-                const transactionHistory = await apiClient.getCreditTransactions(20)
+                const transactionHistory = await api.getCreditTransactions(20)
                 setTransactions(transactionHistory)
             } catch (error) {
                 router.push('/auth/login')
@@ -43,19 +43,19 @@ export default function CreditsPage() {
 
         setIsPurchasing(true)
         try {
-            await apiClient.purchaseCredits({
+            await api.purchaseCredits({
                 amount,
                 payment_reference: `test_purchase_${Date.now()}`
             })
 
             // Reload data
-            const userData = await apiClient.getCurrentUser()
+            const userData = await api.getCurrentUser()
             setUser(userData)
 
-            const summary = await apiClient.getCreditSummary()
+            const summary = await api.getCreditSummary()
             setCreditSummary(summary)
 
-            const transactionHistory = await apiClient.getCreditTransactions(20)
+            const transactionHistory = await api.getCreditTransactions(20)
             setTransactions(transactionHistory)
         } catch (error) {
             console.error('Purchase failed:', error)
@@ -68,19 +68,19 @@ export default function CreditsPage() {
         if (!user) return
 
         try {
-            await apiClient.useCredits({
+            await api.useCredits({
                 description: "Test podcast generation",
                 amount: 1
             })
 
             // Reload data
-            const userData = await apiClient.getCurrentUser()
+            const userData = await api.getCurrentUser()
             setUser(userData)
 
-            const summary = await apiClient.getCreditSummary()
+            const summary = await api.getCreditSummary()
             setCreditSummary(summary)
 
-            const transactionHistory = await apiClient.getCreditTransactions(20)
+            const transactionHistory = await api.getCreditTransactions(20)
             setTransactions(transactionHistory)
         } catch (error) {
             console.error('Usage failed:', error)
@@ -149,6 +149,19 @@ export default function CreditsPage() {
                                 </CardDescription>
                             </CardHeader>
                             <CardContent>
+                                <div className="mb-4">
+                                    <Link href="/dashboard/credits/pricing">
+                                        <Button className="w-full bg-purple-600 hover:bg-purple-700">
+                                            <CreditCard className="h-4 w-4 mr-2" />
+                                            View Credit Bundles & Pricing
+                                        </Button>
+                                    </Link>
+                                </div>
+
+                                <div className="text-center text-sm text-gray-400 mb-4">
+                                    Or use test purchases below (development only)
+                                </div>
+
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     {[
                                         { credits: 1, price: 5, popular: false },
