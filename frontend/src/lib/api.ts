@@ -18,6 +18,15 @@ export interface RegisterRequest {
     password: string
 }
 
+export interface UpdateEmailRequest {
+    email: string
+}
+
+export interface UpdatePasswordRequest {
+    current_password: string
+    new_password: string
+}
+
 export interface AuthResponse {
     access_token: string
     token_type: string
@@ -97,6 +106,21 @@ class ApiClient {
 
     async getCurrentUser(): Promise<User> {
         return this.request<User>('/api/users/me')
+    }
+
+    // Profile management endpoints
+    async updateEmail(emailData: UpdateEmailRequest): Promise<User> {
+        return this.request<User>('/api/users/me/email', {
+            method: 'PUT',
+            body: JSON.stringify(emailData),
+        })
+    }
+
+    async updatePassword(passwordData: UpdatePasswordRequest): Promise<User> {
+        return this.request<User>('/api/users/me/password', {
+            method: 'PUT',
+            body: JSON.stringify(passwordData),
+        })
     }
 
     logout() {

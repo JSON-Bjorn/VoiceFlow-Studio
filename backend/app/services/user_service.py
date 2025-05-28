@@ -54,3 +54,37 @@ class UserService:
             self.db.commit()
             self.db.refresh(user)
         return user
+
+    def update_user_email(self, user_id: int, new_email: str) -> User:
+        """Update user email"""
+        # Check if email is already taken by another user
+        existing_user = self.get_user_by_email(new_email)
+        if existing_user and existing_user.id != user_id:
+            raise ValueError("Email is already taken by another user")
+
+        user = self.get_user_by_id(user_id)
+        if not user:
+            raise ValueError("User not found")
+
+        user.email = new_email
+        self.db.commit()
+        self.db.refresh(user)
+        return user
+
+    def update_user_password(
+        self, user_id: int, current_password: str, new_password: str
+    ) -> User:
+        """Update user password"""
+        user = self.get_user_by_id(user_id)
+        if not user:
+            raise ValueError("User not found")
+
+        # Verify current password
+        if not verify_password(current_password, user.hashed_password):
+            raise ValueError("Current password is incorrect")
+
+        # Hash and update new password
+        user.hashed_password = get_password_hash(new_password)
+        self.db.commit()
+        self.db.refresh(user)
+        return user

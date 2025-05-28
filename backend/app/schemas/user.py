@@ -16,6 +16,15 @@ class UserLogin(BaseModel):
     password: str
 
 
+class UserUpdateEmail(BaseModel):
+    email: EmailStr
+
+
+class UserUpdatePassword(BaseModel):
+    current_password: str
+    new_password: str
+
+
 class UserResponse(UserBase):
     id: int
     credits: int

@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Mic, Plus, User, CreditCard, History, LogOut } from 'lucide-react'
+import { Mic, Plus, User, CreditCard, History, LogOut, Settings } from 'lucide-react'
 import { apiClient, User as UserType } from '@/lib/api'
 
 export default function DashboardPage() {
@@ -61,6 +62,16 @@ export default function DashboardPage() {
                                 <span className="text-sm text-gray-300">Credits: </span>
                                 <span className="font-semibold text-purple-400">{user.credits}</span>
                             </div>
+                            <Link href="/dashboard/profile">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="border-slate-600 text-white hover:bg-slate-700"
+                                >
+                                    <Settings className="h-4 w-4 mr-2" />
+                                    Profile
+                                </Button>
+                            </Link>
                             <Button
                                 variant="outline"
                                 size="sm"
@@ -87,7 +98,7 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Quick Actions */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                     <Card className="bg-slate-800/50 border-slate-700 hover:bg-slate-800/70 transition-colors cursor-pointer">
                         <CardHeader>
                             <CardTitle className="text-white flex items-center">
@@ -138,6 +149,25 @@ export default function DashboardPage() {
                             </Button>
                         </CardContent>
                     </Card>
+
+                    <Link href="/dashboard/profile">
+                        <Card className="bg-slate-800/50 border-slate-700 hover:bg-slate-800/70 transition-colors cursor-pointer h-full">
+                            <CardHeader>
+                                <CardTitle className="text-white flex items-center">
+                                    <Settings className="h-5 w-5 mr-2 text-orange-400" />
+                                    Profile Settings
+                                </CardTitle>
+                                <CardDescription className="text-gray-300">
+                                    Manage your account and preferences
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <Button variant="outline" className="w-full border-slate-600 text-white hover:bg-slate-700">
+                                    Manage Profile
+                                </Button>
+                            </CardContent>
+                        </Card>
+                    </Link>
                 </div>
 
                 {/* Stats */}
