@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from typing import Optional
 from ..models.user import User
+from ..models.credit_transaction import CreditTransaction, TransactionType
 from ..schemas.user import UserCreate
 from ..core.auth import get_password_hash, verify_password
 
@@ -35,6 +36,18 @@ class UserService:
         self.db.add(db_user)
         self.db.commit()
         self.db.refresh(db_user)
+
+        # Create bonus credit transaction record
+        bonus_transaction = CreditTransaction(
+            user_id=db_user.id,
+            amount=1,
+            transaction_type=TransactionType.BONUS,
+            description="Welcome bonus - 1 free credit",
+            reference_id="signup_bonus",
+        )
+        self.db.add(bonus_transaction)
+        self.db.commit()
+
         return db_user
 
     def authenticate_user(self, email: str, password: str) -> Optional[User]:

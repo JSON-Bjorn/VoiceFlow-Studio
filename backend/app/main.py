@@ -8,7 +8,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import API routes
-from app.api import auth, users
+from app.api import auth, users, credits, podcasts
 
 # Load environment variables
 load_dotenv()
@@ -31,6 +31,8 @@ app.add_middleware(
 # Include API routes
 app.include_router(auth.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
+app.include_router(credits.router, prefix="/api")
+app.include_router(podcasts.router)
 
 
 @app.get("/")

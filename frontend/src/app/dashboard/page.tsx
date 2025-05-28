@@ -5,19 +5,25 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { CreditBalance } from '@/components/ui/credit-balance'
 import { Mic, Plus, User, CreditCard, History, LogOut, Settings } from 'lucide-react'
-import { apiClient, User as UserType } from '@/lib/api'
+import { apiClient, User as UserType, CreditSummary } from '@/lib/api'
 
 export default function DashboardPage() {
     const router = useRouter()
     const [user, setUser] = useState<UserType | null>(null)
+    const [creditSummary, setCreditSummary] = useState<CreditSummary | null>(null)
     const [isLoading, setIsLoading] = useState(true)
 
     useEffect(() => {
-        const loadUser = async () => {
+        const loadUserData = async () => {
             try {
                 const userData = await apiClient.getCurrentUser()
                 setUser(userData)
+
+                // Load credit summary
+                const summary = await apiClient.getCreditSummary()
+                setCreditSummary(summary)
             } catch (error) {
                 // If we can't get user data, redirect to login
                 router.push('/auth/login')
@@ -26,12 +32,16 @@ export default function DashboardPage() {
             }
         }
 
-        loadUser()
+        loadUserData()
     }, [router])
 
     const handleLogout = () => {
         apiClient.logout()
         router.push('/')
+    }
+
+    const handleBuyCredits = () => {
+        router.push('/dashboard/credits')
     }
 
     if (isLoading) {
@@ -58,10 +68,10 @@ export default function DashboardPage() {
                         </div>
 
                         <div className="flex items-center space-x-4">
-                            <div className="text-white">
-                                <span className="text-sm text-gray-300">Credits: </span>
-                                <span className="font-semibold text-purple-400">{user.credits}</span>
-                            </div>
+                            <CreditBalance
+                                credits={user.credits}
+                                variant="header"
+                            />
                             <Link href="/dashboard/profile">
                                 <Button
                                     variant="outline"
@@ -97,6 +107,16 @@ export default function DashboardPage() {
                     </p>
                 </div>
 
+                {/* Credit Balance Card */}
+                <div className="mb-8">
+                    <CreditBalance
+                        credits={user.credits}
+                        variant="compact"
+                        showBuyButton={true}
+                        onBuyCredits={handleBuyCredits}
+                    />
+                </div>
+
                 {/* Quick Actions */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                     <Card className="bg-slate-800/50 border-slate-700 hover:bg-slate-800/70 transition-colors cursor-pointer">
@@ -110,8 +130,11 @@ export default function DashboardPage() {
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
-                            <Button className="w-full bg-purple-600 hover:bg-purple-700">
-                                Start Creating
+                            <Button
+                                className="w-full bg-purple-600 hover:bg-purple-700"
+                                disabled={user.credits === 0}
+                            >
+                                {user.credits === 0 ? 'No Credits' : 'Start Creating'}
                             </Button>
                         </CardContent>
                     </Card>
@@ -127,28 +150,34 @@ export default function DashboardPage() {
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
-                            <Button variant="outline" className="w-full border-slate-600 text-white hover:bg-slate-700">
+                            <Button
+                                variant="outline"
+                                className="w-full border-slate-600 text-white hover:bg-slate-700"
+                                onClick={handleBuyCredits}
+                            >
                                 View Plans
                             </Button>
                         </CardContent>
                     </Card>
 
-                    <Card className="bg-slate-800/50 border-slate-700 hover:bg-slate-800/70 transition-colors cursor-pointer">
-                        <CardHeader>
-                            <CardTitle className="text-white flex items-center">
-                                <History className="h-5 w-5 mr-2 text-blue-400" />
-                                Podcast History
-                            </CardTitle>
-                            <CardDescription className="text-gray-300">
-                                View and manage your created podcasts
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <Button variant="outline" className="w-full border-slate-600 text-white hover:bg-slate-700">
-                                View History
-                            </Button>
-                        </CardContent>
-                    </Card>
+                    <Link href="/dashboard/library">
+                        <Card className="bg-slate-800/50 border-slate-700 hover:bg-slate-800/70 transition-colors cursor-pointer h-full">
+                            <CardHeader>
+                                <CardTitle className="text-white flex items-center">
+                                    <History className="h-5 w-5 mr-2 text-blue-400" />
+                                    Podcast History
+                                </CardTitle>
+                                <CardDescription className="text-gray-300">
+                                    View and manage your created podcasts
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <Button variant="outline" className="w-full border-slate-600 text-white hover:bg-slate-700">
+                                    View History
+                                </Button>
+                            </CardContent>
+                        </Card>
+                    </Link>
 
                     <Link href="/dashboard/profile">
                         <Card className="bg-slate-800/50 border-slate-700 hover:bg-slate-800/70 transition-colors cursor-pointer h-full">
@@ -170,63 +199,85 @@ export default function DashboardPage() {
                     </Link>
                 </div>
 
-                {/* Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <Card className="bg-slate-800/50 border-slate-700">
-                        <CardHeader>
-                            <CardTitle className="text-white text-lg">Account Status</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="space-y-2">
-                                <div className="flex justify-between">
-                                    <span className="text-gray-300">Status:</span>
-                                    <span className="text-green-400">Active</span>
+                {/* Stats and Recent Activity */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Account Stats */}
+                    <div className="space-y-6">
+                        <Card className="bg-slate-800/50 border-slate-700">
+                            <CardHeader>
+                                <CardTitle className="text-white text-lg">Account Status</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="space-y-2">
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-300">Status:</span>
+                                        <span className="text-green-400">Active</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-300">Member since:</span>
+                                        <span className="text-white">
+                                            {new Date(user.created_at).toLocaleDateString()}
+                                        </span>
+                                    </div>
                                 </div>
-                                <div className="flex justify-between">
-                                    <span className="text-gray-300">Member since:</span>
-                                    <span className="text-white">
-                                        {new Date(user.created_at).toLocaleDateString()}
-                                    </span>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
+                            </CardContent>
+                        </Card>
 
-                    <Card className="bg-slate-800/50 border-slate-700">
-                        <CardHeader>
-                            <CardTitle className="text-white text-lg">Credits</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="space-y-2">
-                                <div className="flex justify-between">
-                                    <span className="text-gray-300">Available:</span>
-                                    <span className="text-purple-400 font-semibold">{user.credits}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-gray-300">Used:</span>
-                                    <span className="text-white">0</span>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
+                        {creditSummary && (
+                            <Card className="bg-slate-800/50 border-slate-700">
+                                <CardHeader>
+                                    <CardTitle className="text-white text-lg">Credit Summary</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between">
+                                            <span className="text-gray-300">Available:</span>
+                                            <span className="text-purple-400 font-semibold">{creditSummary.current_balance}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-gray-300">Total Purchased:</span>
+                                            <span className="text-white">{creditSummary.total_purchased}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-gray-300">Total Used:</span>
+                                            <span className="text-white">{creditSummary.total_used}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-gray-300">Bonus Credits:</span>
+                                            <span className="text-green-400">{creditSummary.total_bonus}</span>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
+                    </div>
 
-                    <Card className="bg-slate-800/50 border-slate-700">
-                        <CardHeader>
-                            <CardTitle className="text-white text-lg">Podcasts Created</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="space-y-2">
-                                <div className="flex justify-between">
-                                    <span className="text-gray-300">Total:</span>
-                                    <span className="text-white">0</span>
+                    {/* Recent Credit Activity */}
+                    {creditSummary && creditSummary.recent_transactions.length > 0 && (
+                        <Card className="bg-slate-800/50 border-slate-700">
+                            <CardHeader>
+                                <CardTitle className="text-white text-lg">Recent Credit Activity</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="space-y-3">
+                                    {creditSummary.recent_transactions.map((transaction) => (
+                                        <div key={transaction.id} className="flex justify-between items-center py-2 border-b border-slate-700 last:border-b-0">
+                                            <div>
+                                                <p className="text-white text-sm">{transaction.description}</p>
+                                                <p className="text-gray-400 text-xs">
+                                                    {new Date(transaction.created_at).toLocaleDateString()}
+                                                </p>
+                                            </div>
+                                            <span className={`font-semibold ${transaction.amount > 0 ? 'text-green-400' : 'text-red-400'
+                                                }`}>
+                                                {transaction.amount > 0 ? '+' : ''}{transaction.amount}
+                                            </span>
+                                        </div>
+                                    ))}
                                 </div>
-                                <div className="flex justify-between">
-                                    <span className="text-gray-300">This month:</span>
-                                    <span className="text-white">0</span>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
+                            </CardContent>
+                        </Card>
+                    )}
                 </div>
             </main>
         </div>

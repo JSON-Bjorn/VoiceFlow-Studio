@@ -17,3 +17,4 @@ class User(Base):
 
     # Relationships
     podcasts = relationship("Podcast", back_populates="user")
+    credit_transactions = relationship("CreditTransaction", back_populates="user")
