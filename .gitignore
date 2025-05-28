@@ -1,6 +1,8 @@
-prd.pdf
-prd.txt
+*.txt
 .env
 env
 *.env
-tasks.txt
+venv
+venv/
+.venv/
+.venv

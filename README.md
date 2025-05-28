@@ -1,117 +1,254 @@
 # VoiceFlow Studio
 
-This project is a full-scale, AI-powered podcast generation platform. See `prd.txt` for the full product requirements.
+An AI-powered podcast generation platform that creates professional-quality podcasts from simple text prompts using a multi-agent system.
 
-## Current Project Flow
+## 🎯 Overview
 
-### Backend (FastAPI)
-- **Status:** The backend is modularized and partially functional.
-- **What works:**
-  - The FastAPI server starts and exposes the following endpoints:
-    - `/` — Returns a JSON message confirming the backend is running.
-    - `/test_import` — Tests Wikipedia API integration and returns a summary of the Python programming language.
-    - `/generate_podcast` — Accepts a topic and returns a generated podcast script (requires OpenAI API key in environment).
-    - `/generate_audio` — Accepts a script and returns a WAV file using local TTS (pyttsx3).
-- **What is stubbed/not yet implemented:**
-  - User registration, login, authentication (API stubs only)
-  - Payment/Stripe integration (API stubs only)
-  - Admin endpoints (API stubs only)
-  - Podcast credit management
-  - Full agent pipeline (Script Agent, Voice Agent, Audio Agent)
+VoiceFlow Studio transforms any topic into engaging, professional-quality podcasts featuring natural conversations between AI hosts with distinct personalities. Users can generate podcasts in minutes using our advanced AI pipeline powered by OpenAI and ElevenLabs.
 
-### Frontend (React)
-- **Status:** The frontend is scaffolded with all main pages/components as stubs.
-- **What works:**
-  - Navigation between stub pages: Registration, Login, Dashboard, Podcast Generation, Payment, Admin, Example Podcast Library.
-- **What is not yet functional:**
-  - No real backend integration or user flows implemented yet.
+## 🚀 Features
 
-## How to Build and Run the Project (Docker)
+### Core Features
+- **AI-Powered Generation**: Multi-agent system creates natural conversations
+- **Professional Quality**: Studio-quality audio with music and effects
+- **Instant Creation**: Generate podcasts in minutes, not hours
+- **Credit System**: Pay-per-use model with transparent pricing
+- **Example Library**: Showcase of AI-generated podcast samples
 
-1. **Build the full project (backend + frontend) from the root directory:**
+### Technical Features
+- **Modern Frontend**: Next.js 14+ with TypeScript and Tailwind CSS
+- **Robust Backend**: FastAPI with async support and SQLAlchemy ORM
+- **Secure Authentication**: JWT-based auth with password hashing
+- **Payment Integration**: Stripe for secure credit purchases
+- **Cloud Storage**: AWS S3 for audio file storage
+- **Responsive Design**: Mobile-first UI with shadcn/ui components
+
+## 🛠 Tech Stack
+
+### Frontend
+- **Framework**: Next.js 14+ with App Router
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS
+- **Components**: shadcn/ui
+- **Icons**: Lucide React
+- **Authentication**: NextAuth.js
+- **Forms**: React Hook Form with Zod validation
+
+### Backend
+- **Framework**: FastAPI (Python)
+- **Database**: PostgreSQL with SQLAlchemy ORM
+- **Authentication**: JWT with bcrypt
+- **Payments**: Stripe API
+- **AI Services**: OpenAI API, ElevenLabs API
+- **File Storage**: AWS S3
+- **Migration**: Alembic
+
+### AI Pipeline
+- **Research Agent**: OpenAI GPT for topic research
+- **Script Agent**: Dialogue generation with distinct personalities
+- **Voice Agent**: ElevenLabs TTS with multiple voices
+- **Audio Agent**: Audio assembly with intro/outro music
+- **Orchestrator**: Manages the entire generation workflow
+
+## 📁 Project Structure
+
+```
+VoiceFlow Studio/
+├── frontend/                 # Next.js frontend application
+│   ├── src/
+│   │   ├── app/             # App Router pages
+│   │   │   ├── auth/        # Authentication pages
+│   │   │   ├── dashboard/   # User dashboard
+│   │   │   ├── generate/    # Podcast generation
+│   │   │   └── library/     # Example podcasts
+│   │   ├── components/      # Reusable components
+│   │   │   ├── ui/          # shadcn/ui components
+│   │   │   ├── auth/        # Auth components
+│   │   │   └── podcast/     # Podcast components
+│   │   └── lib/             # Utilities and config
+│   └── public/              # Static assets
+├── backend/                 # FastAPI backend application
+│   ├── app/
+│   │   ├── api/             # API routes
+│   │   ├── core/            # Core functionality
+│   │   ├── models/          # Database models
+│   │   ├── services/        # Business logic
+│   │   └── agents/          # AI agent system
+│   └── alembic/             # Database migrations
+├── tasks.txt               # Development progress tracking
+└── README.md              # Project documentation
+```
+
+## 🚀 Getting Started
+
+### Prerequisites
+- Node.js 18+ and npm
+- Python 3.9+ and pip
+- PostgreSQL database
+- OpenAI API key
+- ElevenLabs API key
+- Stripe account (for payments)
+- AWS S3 bucket (for file storage)
+
+### Frontend Setup
+
+1. **Navigate to frontend directory**
    ```bash
-   docker build -t voiceflow-studio .
+   cd frontend
    ```
-2. **Run the container:**
+
+2. **Install dependencies**
    ```bash
-   docker run -p 8000:8000 -p 3000:3000 voiceflow-studio
+   npm install
    ```
-   - The backend will be available at [http://localhost:8000](http://localhost:8000)
-   - The frontend will be available at [http://localhost:3000](http://localhost:3000)
 
-## How to Run the Backend or Frontend Separately (Development)
+3. **Start development server**
+   ```bash
+   npm run dev
+   ```
 
-- **Backend:**
-  ```bash
-  cd backend
-  uvicorn main:app --reload
-  ```
-- **Frontend:**
-  ```bash
-  cd frontend
-  npm install
-  npm start
-  ```
+4. **Access the application**
+   - Frontend: http://localhost:3000
+   - Features: Landing page, auth pages, example library
 
-## Project Structure
+### Backend Setup
 
-- `backend/` - FastAPI backend with modular agent pipeline
-- `frontend/` - React frontend with user dashboard, payment, and podcast generation
-- `Dockerfile` - Root Dockerfile to build and run both backend and frontend
-- `supervisord.conf` - Supervisor config to run both services in one container
-- `prd.txt` - Product requirements document
-- `tasks.txt` - Project task tracking
-- `.env`, `.gitignore`, `README.md`, etc.
+1. **Navigate to backend directory**
+   ```bash
+   cd backend
+   ```
 
-**Note:**
-- The `backend/compose.yml` file is deprecated and can be deleted. The root Dockerfile now handles multi-service builds and runs.
+2. **Create virtual environment**
+   ```bash
+   python -m venv venv
+   source venv/Scripts/activate  # Windows
+   source venv/bin/activate      # macOS/Linux
+   ```
 
-## Key Features (Planned)
-- User registration, login, dashboard
-- Payment integration (Stripe)
-- Podcast generation using OpenAI and ElevenLabs
-- Example podcast library
-- Admin dashboard
+3. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-See the PRD for more details and the current `tasks.txt` for up-to-date progress and next steps.
+4. **Set up environment variables**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your API keys and database URL
+   ```
 
-## Project Vision
-VoiceFlow Studio aims to democratize podcast creation by enabling anyone to generate professional, engaging audio content through AI. Users will input a topic and receive a complete podcast episode featuring a natural conversation between two AI hosts.
+5. **Run database migrations**
+   ```bash
+   alembic upgrade head
+   ```
 
-## Planned Features
-- **Text-to-Podcast Generation:** Enter a topic and get a 5–15 minute podcast episode, with a natural-sounding conversation between two distinct AI hosts (Björn & Felix).
-- **AI Host Personalities:** Consistent, engaging personalities for each host—one curious and enthusiastic, the other knowledgeable and analytical.
-- **Voice Synthesis:** High-quality, human-like voices using premium TTS APIs (e.g., ElevenLabs).
-- **Professional Audio Output:** Automatic background music, intro/outro, and audio post-production for a polished result.
-- **User-Friendly Interface:** Simple web interface for entering topics, adjusting settings, and downloading or listening to generated podcasts.
-- **Automated Research:** The system will gather relevant information from sources like Wikipedia to ensure accurate and engaging content.
-- **Multi-Language Support:** Initial support for Swedish and English.
+6. **Start the server**
+   ```bash
+   python app/main.py
+   ```
 
-## Target Users
-- **Students & Educators:** For creating educational audio content.
-- **Content Creators & Hobbyists:** For quickly generating podcast drafts and ideas.
-- **Professionals & Researchers:** For summarizing topics and sharing knowledge in audio format.
+7. **Access the API**
+   - Backend: http://localhost:8000
+   - API Docs: http://localhost:8000/docs
 
-## Technology Stack (Planned)
-- **Backend:** Python (FastAPI)
-- **Frontend:** Streamlit or similar (for rapid prototyping, UI isnt as important)
-- **AI/ML:** Claude, OpenAI, Ollama, Groq, ElevenLabs TTS (whatever costs the least and gives the best result)
-- **Audio Processing:** pydub, librosa (needs research)
-- **Deployment:** Local development environment
+## 🔧 Environment Variables
 
-## Project Timeline
-- **Total Duration:** 4 weeks
-- **MVP Deadline:** End of week 2 (core podcast generation working)
-- **Polish & Testing:** Week 4
+### Backend (.env)
+```env
+# Database
+DATABASE_URL=postgresql://user:password@localhost/voiceflow_db
 
-## Follow the Project
-This repository will be updated as development progresses. Planned updates include:
-- Progress on core podcast generation features
-- Demos and sample outputs
-- User interface previews
-- Technical architecture and design notes
+# Security
+SECRET_KEY=your-secret-key-here
 
-// Björn
+# External APIs
+OPENAI_API_KEY=your-openai-api-key
+ELEVENLABS_API_KEY=your-elevenlabs-api-key
+
+# Stripe
+STRIPE_SECRET_KEY=your-stripe-secret-key
+STRIPE_WEBHOOK_SECRET=your-stripe-webhook-secret
+
+# AWS S3
+AWS_ACCESS_KEY_ID=your-aws-access-key
+AWS_SECRET_ACCESS_KEY=your-aws-secret-key
+S3_BUCKET_NAME=your-s3-bucket-name
+
+# Application
+DEBUG=false
+```
+
+### Frontend (.env.local)
+```env
+NEXTAUTH_SECRET=your-nextauth-secret
+NEXTAUTH_URL=http://localhost:3000
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=your-stripe-publishable-key
+```
+
+## 🎨 Design System
+
+### Color Palette
+- **Primary**: Purple (#8B5CF6)
+- **Background**: Slate gradients (#0F172A to #7C3AED)
+- **Text**: White (#FFFFFF) and Gray (#9CA3AF)
+- **Accent**: Pink (#EC4899) for highlights
+
+### Typography
+- **Headings**: Bold, large sizes for impact
+- **Body**: Clean, readable fonts
+- **Code**: Monospace for technical content
+
+### Components
+- **Cards**: Glassmorphism effect with slate backgrounds
+- **Buttons**: Purple primary with hover effects
+- **Forms**: Dark theme with purple focus states
+- **Navigation**: Clean, minimal design
+
+## 📊 Development Progress
+
+Track development progress in `tasks.txt`:
+- ✅ Phase 1: Foundation & Setup (Partially Complete)
+- 🔄 Current: Database setup and authentication
+- 📋 Next: Payment integration and AI pipeline
+
+### Completed Features
+- [x] Modern landing page with hero section
+- [x] Authentication pages (login/register)
+- [x] Example podcast library
+- [x] FastAPI backend structure
+- [x] Database models (User, Podcast)
+- [x] shadcn/ui component system
+
+### In Progress
+- [ ] PostgreSQL database connection
+- [ ] Authentication middleware
+- [ ] Credit system implementation
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📝 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- **OpenAI** for GPT API
+- **ElevenLabs** for text-to-speech
+- **Vercel** for Next.js framework
+- **FastAPI** for the backend framework
+- **shadcn/ui** for beautiful components
+- **Tailwind CSS** for styling system
+
+## 📞 Support
+
+For support, email support@voiceflowstudio.com or join our Discord community.
+
 ---
 
-**Stay tuned for updates as we build VoiceFlow Studio!** 
+**VoiceFlow Studio** - Transform ideas into professional podcasts with AI ✨
