@@ -31,12 +31,12 @@ VoiceFlow Studio transforms any topic into engaging, professional-quality podcas
 - **Styling**: Tailwind CSS
 - **Components**: shadcn/ui
 - **Icons**: Lucide React
-- **Authentication**: NextAuth.js
-- **Forms**: React Hook Form with Zod validation
+- **Authentication**: JWT tokens
+- **Forms**: React Hook Form with validation
 
 ### Backend
 - **Framework**: FastAPI (Python)
-- **Database**: PostgreSQL with SQLAlchemy ORM
+- **Database**: SQLite (development) / PostgreSQL (production)
 - **Authentication**: JWT with bcrypt
 - **Payments**: Stripe API
 - **AI Services**: OpenAI API, ElevenLabs API
@@ -74,115 +74,146 @@ VoiceFlow Studio/
 │   │   ├── models/          # Database models
 │   │   ├── services/        # Business logic
 │   │   └── agents/          # AI agent system
-│   └── alembic/             # Database migrations
+│   ├── alembic/             # Database migrations
+│   └── run.py               # Server startup script
+├── start-dev.sh            # Unix startup script
+├── start-dev.bat           # Windows startup script
 ├── tasks.txt               # Development progress tracking
 └── README.md              # Project documentation
 ```
 
-## 🚀 Getting Started
+## 🚀 Quick Start
+
+### Option 1: Automated Setup (Recommended)
+
+**Windows:**
+```bash
+# Double-click start-dev.bat or run:
+start-dev.bat
+```
+
+**macOS/Linux:**
+```bash
+./start-dev.sh
+```
+
+### Option 2: Manual Setup
+
+**Backend (Terminal 1):**
+```bash
+cd backend
+source venv/Scripts/activate  # Windows Git Bash
+source venv/bin/activate      # macOS/Linux
+python run.py
+```
+
+**Frontend (Terminal 2):**
+```bash
+cd frontend
+npm run dev
+```
+
+### Access the Application
+- **Frontend**: http://localhost:3000 (or next available port)
+- **Backend API**: http://localhost:8000
+- **API Documentation**: http://localhost:8000/docs
+
+## ✅ Current Status
+
+### Working Features
+- ✅ **Landing Page**: Professional UI with hero section and navigation
+- ✅ **User Registration**: Email validation, password confirmation, terms acceptance
+- ✅ **User Login**: JWT authentication with secure token storage
+- ✅ **Protected Dashboard**: User profile display with credit balance
+- ✅ **Database Integration**: SQLite with Alembic migrations
+- ✅ **API Integration**: Full frontend-backend communication
+- ✅ **Error Handling**: Proper error messages and loading states
+- ✅ **Logout Functionality**: Secure token cleanup
+
+### In Development
+- 🔄 **User Profile Management**: Edit profile, change password
+- 🔄 **Credit System Integration**: Purchase and track credits
+
+### Not Yet Implemented
+- ❌ **Podcast Generation Pipeline**: AI agent system
+- ❌ **Payment Processing**: Stripe integration
+- ❌ **Audio Playback**: Example podcast audio files
+- ❌ **File Storage**: AWS S3 integration
+- ❌ **AI Services**: OpenAI/ElevenLabs connection
+
+## 🔧 Development Setup
 
 ### Prerequisites
 - Node.js 18+ and npm
 - Python 3.9+ and pip
-- PostgreSQL database
-- OpenAI API key
-- ElevenLabs API key
-- Stripe account (for payments)
-- AWS S3 bucket (for file storage)
+- Git
 
-### Frontend Setup
+### First-Time Setup
 
-1. **Navigate to frontend directory**
+1. **Clone the repository**
    ```bash
-   cd frontend
+   git clone <repository-url>
+   cd voiceflow-studio
    ```
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Start development server**
-   ```bash
-   npm run dev
-   ```
-
-4. **Access the application**
-   - Frontend: http://localhost:3000
-   - Features: Landing page, auth pages, example library
-
-### Backend Setup
-
-1. **Navigate to backend directory**
+2. **Backend Setup**
    ```bash
    cd backend
-   ```
-
-2. **Create virtual environment**
-   ```bash
    python -m venv venv
    source venv/Scripts/activate  # Windows
    source venv/bin/activate      # macOS/Linux
-   ```
-
-3. **Install dependencies**
-   ```bash
    pip install -r requirements.txt
    ```
 
-4. **Set up environment variables**
+3. **Frontend Setup**
    ```bash
-   cp .env.example .env
-   # Edit .env with your API keys and database URL
+   cd frontend
+   npm install
    ```
 
-5. **Run database migrations**
+4. **Database Setup**
    ```bash
+   cd backend
    alembic upgrade head
    ```
 
-6. **Start the server**
+5. **Start Development**
    ```bash
-   python app/main.py
+   # From project root
+   ./start-dev.sh  # Unix
+   start-dev.bat   # Windows
    ```
-
-7. **Access the API**
-   - Backend: http://localhost:8000
-   - API Docs: http://localhost:8000/docs
 
 ## 🔧 Environment Variables
 
 ### Backend (.env)
 ```env
-# Database
-DATABASE_URL=postgresql://user:password@localhost/voiceflow_db
+# Database (SQLite for development)
+DATABASE_URL=sqlite:///./voiceflow.db
 
 # Security
-SECRET_KEY=your-secret-key-here
+SECRET_KEY=your-secret-key-change-this-in-production
 
-# External APIs
-OPENAI_API_KEY=your-openai-api-key
-ELEVENLABS_API_KEY=your-elevenlabs-api-key
+# External APIs (add your keys when ready)
+OPENAI_API_KEY=your-openai-api-key-here
+ELEVENLABS_API_KEY=your-elevenlabs-api-key-here
 
-# Stripe
-STRIPE_SECRET_KEY=your-stripe-secret-key
-STRIPE_WEBHOOK_SECRET=your-stripe-webhook-secret
+# Stripe (add your keys when ready)
+STRIPE_SECRET_KEY=your-stripe-secret-key-here
+STRIPE_WEBHOOK_SECRET=your-stripe-webhook-secret-here
 
-# AWS S3
-AWS_ACCESS_KEY_ID=your-aws-access-key
-AWS_SECRET_ACCESS_KEY=your-aws-secret-key
-S3_BUCKET_NAME=your-s3-bucket-name
+# AWS S3 (add your keys when ready)
+AWS_ACCESS_KEY_ID=your-aws-access-key-here
+AWS_SECRET_ACCESS_KEY=your-aws-secret-key-here
+S3_BUCKET_NAME=your-s3-bucket-name-here
 
 # Application
-DEBUG=false
+DEBUG=true
 ```
 
 ### Frontend (.env.local)
 ```env
-NEXTAUTH_SECRET=your-nextauth-secret
-NEXTAUTH_URL=http://localhost:3000
 NEXT_PUBLIC_API_URL=http://localhost:8000
-NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=your-stripe-publishable-key
 ```
 
 ## 🎨 Design System
@@ -198,56 +229,45 @@ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=your-stripe-publishable-key
 - **Body**: Clean, readable fonts
 - **Code**: Monospace for technical content
 
-### Components
-- **Cards**: Glassmorphism effect with slate backgrounds
-- **Buttons**: Purple primary with hover effects
-- **Forms**: Dark theme with purple focus states
-- **Navigation**: Clean, minimal design
+## 🧪 Testing the Application
 
-## 📊 Development Progress
+### User Registration & Login Flow
+1. Visit http://localhost:3000
+2. Click "Get Started" → "Sign up"
+3. Register with email and password
+4. Login with your credentials
+5. Access the dashboard with your profile
 
-Track development progress in `tasks.txt`:
-- ✅ Phase 1: Foundation & Setup (Partially Complete)
-- 🔄 Current: Database setup and authentication
-- 📋 Next: Payment integration and AI pipeline
+### API Testing
+- Visit http://localhost:8000/docs for interactive API documentation
+- Test authentication endpoints
+- Verify user creation and login
 
-### Completed Features
-- [x] Modern landing page with hero section
-- [x] Authentication pages (login/register)
-- [x] Example podcast library
-- [x] FastAPI backend structure
-- [x] Database models (User, Podcast)
-- [x] shadcn/ui component system
+## 📋 Development Tasks
 
-### In Progress
-- [ ] PostgreSQL database connection
-- [ ] Authentication middleware
-- [ ] Credit system implementation
+See `tasks.txt` for detailed development progress and upcoming features.
+
+**Current Phase**: User Management & UI (Phase 2)
+**Next Phase**: Payment Integration or AI Pipeline Development
 
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
 
-## 📝 License
+## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-## 🙏 Acknowledgments
+## 🆘 Support
 
-- **OpenAI** for GPT API
-- **ElevenLabs** for text-to-speech
-- **Vercel** for Next.js framework
-- **FastAPI** for the backend framework
-- **shadcn/ui** for beautiful components
-- **Tailwind CSS** for styling system
-
-## 📞 Support
-
-For support, email support@voiceflowstudio.com or join our Discord community.
+For support and questions:
+- Check the API documentation at http://localhost:8000/docs
+- Review the tasks.txt file for development status
+- Create an issue in the repository
 
 ---
 

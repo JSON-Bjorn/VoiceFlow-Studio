@@ -2,13 +2,19 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Mic, Eye, EyeOff, Check } from 'lucide-react'
+import { Mic, Eye, EyeOff, Check, Loader2 } from 'lucide-react'
+import { apiClient } from '@/lib/api'
 
 export default function RegisterPage() {
+    const router = useRouter()
     const [showPassword, setShowPassword] = useState(false)
     const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+    const [isLoading, setIsLoading] = useState(false)
+    const [error, setError] = useState('')
+    const [success, setSuccess] = useState('')
     const [formData, setFormData] = useState({
         email: '',
         password: '',
@@ -18,19 +24,38 @@ export default function RegisterPage() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
+        setIsLoading(true)
+        setError('')
+        setSuccess('')
 
         if (formData.password !== formData.confirmPassword) {
-            alert('Passwords do not match')
+            setError('Passwords do not match')
+            setIsLoading(false)
             return
         }
 
         if (!formData.acceptTerms) {
-            alert('Please accept the terms and conditions')
+            setError('Please accept the terms and conditions')
+            setIsLoading(false)
             return
         }
 
-        // TODO: Implement registration logic
-        console.log('Registration attempt:', formData)
+        try {
+            await apiClient.register({
+                email: formData.email,
+                password: formData.password
+            })
+
+            setSuccess('Account created successfully! Please sign in.')
+            // Redirect to login after a short delay
+            setTimeout(() => {
+                router.push('/auth/login')
+            }, 2000)
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Registration failed')
+        } finally {
+            setIsLoading(false)
+        }
     }
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -62,6 +87,18 @@ export default function RegisterPage() {
                     </CardHeader>
                     <CardContent>
                         <form onSubmit={handleSubmit} className="space-y-4">
+                            {error && (
+                                <div className="bg-red-500/10 border border-red-500/20 rounded-md p-3">
+                                    <p className="text-red-400 text-sm">{error}</p>
+                                </div>
+                            )}
+
+                            {success && (
+                                <div className="bg-green-500/10 border border-green-500/20 rounded-md p-3">
+                                    <p className="text-green-400 text-sm">{success}</p>
+                                </div>
+                            )}
+
                             <div className="space-y-2">
                                 <label htmlFor="email" className="text-sm font-medium text-white">
                                     Email
@@ -75,6 +112,7 @@ export default function RegisterPage() {
                                     onChange={handleChange}
                                     className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                                     placeholder="Enter your email"
+                                    disabled={isLoading}
                                 />
                             </div>
 
@@ -92,11 +130,13 @@ export default function RegisterPage() {
                                         onChange={handleChange}
                                         className="w-full px-3 py-2 pr-10 bg-slate-700 border border-slate-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                                         placeholder="Create a password"
+                                        disabled={isLoading}
                                     />
                                     <button
                                         type="button"
                                         onClick={() => setShowPassword(!showPassword)}
                                         className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-white"
+                                        disabled={isLoading}
                                     >
                                         {showPassword ? (
                                             <EyeOff className="h-4 w-4" />
@@ -124,11 +164,13 @@ export default function RegisterPage() {
                                         onChange={handleChange}
                                         className="w-full px-3 py-2 pr-10 bg-slate-700 border border-slate-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                                         placeholder="Confirm your password"
+                                        disabled={isLoading}
                                     />
                                     <button
                                         type="button"
                                         onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                                         className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-white"
+                                        disabled={isLoading}
                                     >
                                         {showConfirmPassword ? (
                                             <EyeOff className="h-4 w-4" />
@@ -149,13 +191,14 @@ export default function RegisterPage() {
                                         checked={formData.acceptTerms}
                                         onChange={handleChange}
                                         className="sr-only"
+                                        disabled={isLoading}
                                     />
                                     <div
                                         className={`w-4 h-4 rounded border-2 flex items-center justify-center cursor-pointer ${formData.acceptTerms
                                                 ? 'bg-purple-600 border-purple-600'
                                                 : 'border-slate-600 bg-slate-700'
-                                            }`}
-                                        onClick={() => setFormData(prev => ({ ...prev, acceptTerms: !prev.acceptTerms }))}
+                                            } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        onClick={() => !isLoading && setFormData(prev => ({ ...prev, acceptTerms: !prev.acceptTerms }))}
                                     >
                                         {formData.acceptTerms && <Check className="h-3 w-3 text-white" />}
                                     </div>
@@ -172,8 +215,19 @@ export default function RegisterPage() {
                                 </label>
                             </div>
 
-                            <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700">
-                                Create Account
+                            <Button
+                                type="submit"
+                                className="w-full bg-purple-600 hover:bg-purple-700"
+                                disabled={isLoading}
+                            >
+                                {isLoading ? (
+                                    <>
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        Creating Account...
+                                    </>
+                                ) : (
+                                    'Create Account'
+                                )}
                             </Button>
                         </form>
 
