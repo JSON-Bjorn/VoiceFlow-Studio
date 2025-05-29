@@ -3,6 +3,7 @@ from .research_agent import ResearchAgent
 from .content_planning_agent import ContentPlanningAgent
 from .openai_service import OpenAIService
 from .voice_agent import voice_agent
+from .audio_agent import audio_agent
 from ..models.podcast import Podcast
 from ..services.podcast_service import PodcastService
 from sqlalchemy.orm import Session
@@ -35,6 +36,7 @@ class EnhancedPipelineOrchestrator:
         self.openai_service = OpenAIService()
         self.podcast_service = PodcastService(db)
         self.voice_agent = voice_agent
+        self.audio_agent = audio_agent
 
         # Enhanced state tracking
         self.current_generation = None
@@ -151,7 +153,7 @@ class EnhancedPipelineOrchestrator:
                 and self.voice_agent.is_available()
             ):
                 await self._update_progress(
-                    progress_callback, "Generating voice audio", 70
+                    progress_callback, "Generating voice audio", 65
                 )
                 voice_result = await self._voice_generation_phase(
                     script_result["data"], user_inputs, generation_state
@@ -163,9 +165,32 @@ class EnhancedPipelineOrchestrator:
                     )
                     # Continue without voice - this is optional
 
-            # Phase 5: Final Quality Validation and Optimization
+            # Phase 5: Audio Assembly (Optional - only if voice was generated)
+            audio_result = None
+            if (
+                voice_result
+                and voice_result["success"]
+                and self.audio_agent.is_available()
+                and user_inputs.get(
+                    "assemble_audio", True
+                )  # Default to True if voice was generated
+            ):
+                await self._update_progress(
+                    progress_callback, "Assembling final audio episode", 75
+                )
+                audio_result = await self._audio_assembly_phase(
+                    voice_result, user_inputs, generation_state
+                )
+
+                if audio_result and not audio_result["success"]:
+                    logger.warning(
+                        f"Audio assembly failed: {audio_result.get('error', 'Unknown error')}"
+                    )
+                    # Continue without assembled audio - voice segments are still available
+
+            # Phase 6: Final Quality Validation and Optimization
             await self._update_progress(
-                progress_callback, "Final quality validation", 80
+                progress_callback, "Final quality validation", 85
             )
             validation_result = await self._comprehensive_validation(
                 research_result["data"],
@@ -174,7 +199,7 @@ class EnhancedPipelineOrchestrator:
                 generation_state,
             )
 
-            # Phase 6: Save and Complete
+            # Phase 7: Save and Complete
             await self._update_progress(
                 progress_callback, "Saving optimized content", 95
             )
@@ -185,6 +210,7 @@ class EnhancedPipelineOrchestrator:
                 script_result["data"],
                 validation_result,
                 voice_result,
+                audio_result,
                 generation_state,
             )
 
@@ -199,6 +225,9 @@ class EnhancedPipelineOrchestrator:
                 "script_data": script_result["data"],
                 "voice_data": voice_result["data"]
                 if voice_result and voice_result["success"]
+                else None,
+                "audio_data": audio_result["data"]
+                if audio_result and audio_result["success"]
                 else None,
                 "validation": validation_result,
                 "quality_metrics": self._calculate_overall_quality(
@@ -1028,6 +1057,7 @@ class EnhancedPipelineOrchestrator:
         script_data: Dict[str, Any],
         validation_result: Dict[str, Any],
         voice_result: Optional[Dict[str, Any]],
+        audio_result: Optional[Dict[str, Any]],
         generation_state: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Save enhanced generation results"""
@@ -1142,3 +1172,106 @@ class EnhancedPipelineOrchestrator:
             return {"error": "Generation not found"}
         else:
             return self.current_generation or {"status": "No active generation"}
+
+    async def _audio_assembly_phase(
+        self,
+        voice_result: Dict[str, Any],
+        user_inputs: Dict[str, Any],
+        generation_state: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Assemble voice segments into a complete podcast episode using Audio Agent
+
+        Args:
+            voice_result: Voice generation result with segments
+            user_inputs: User inputs for customization
+            generation_state: Current generation state
+
+        Returns:
+            Audio assembly result
+        """
+        try:
+            logger.info("Starting audio assembly phase")
+
+            # Check if audio agent is available
+            if not self.audio_agent.is_available():
+                return {
+                    "success": False,
+                    "error": "Audio assembly not available - PyDub required",
+                    "data": None,
+                }
+
+            # Extract voice segments for assembly
+            voice_segments = voice_result.get("data", {}).get("segments", [])
+            if not voice_segments:
+                return {
+                    "success": False,
+                    "error": "No voice segments found for assembly",
+                    "data": None,
+                }
+
+            # Prepare episode metadata
+            episode_metadata = {
+                "title": user_inputs.get("topic", "Untitled Podcast"),
+                "generation_id": generation_state["id"],
+                "user_inputs": user_inputs,
+                "voice_generation_cost": voice_result.get("data", {}).get(
+                    "total_cost", 0
+                ),
+                "voice_segments_count": len(voice_segments),
+                "voice_total_duration": voice_result.get("data", {}).get(
+                    "total_duration", 0
+                ),
+            }
+
+            # Assemble podcast episode
+            assembly_result = await self.audio_agent.assemble_podcast_episode(
+                voice_segments=voice_segments,
+                podcast_id=str(generation_state["podcast_id"]),
+                episode_metadata=episode_metadata,
+            )
+
+            if assembly_result.success:
+                generation_state["phases_completed"].append("audio_assembly")
+                generation_state["quality_scores"]["audio_assembly"] = (
+                    100  # Successful assembly
+                )
+
+                # Prepare assembly data for response
+                assembly_data = {
+                    "final_audio_path": assembly_result.final_audio_path,
+                    "final_audio_url": assembly_result.final_audio_url,
+                    "total_duration": assembly_result.total_duration,
+                    "segments_processed": assembly_result.segments_processed,
+                    "processing_time": assembly_result.processing_time,
+                    "file_size_bytes": assembly_result.file_size_bytes,
+                    "metadata": assembly_result.metadata,
+                    "audio_processing_applied": {
+                        "normalization": True,
+                        "compression": True,
+                        "silence_removal": True,
+                        "speaker_transitions": True,
+                    },
+                }
+
+                logger.info(
+                    f"Audio assembly completed: {assembly_result.total_duration:.1f}s final episode, "
+                    f"{assembly_result.segments_processed} segments processed"
+                )
+
+                return {
+                    "success": True,
+                    "data": assembly_data,
+                    "processing_result": assembly_result,
+                }
+            else:
+                logger.error(f"Audio assembly failed: {assembly_result.error_message}")
+                return {
+                    "success": False,
+                    "error": assembly_result.error_message,
+                    "data": None,
+                }
+
+        except Exception as e:
+            logger.error(f"Audio assembly phase failed: {e}")
+            return {"success": False, "error": str(e), "data": None}

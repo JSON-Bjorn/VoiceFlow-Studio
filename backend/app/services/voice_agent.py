@@ -13,7 +13,6 @@ import asyncio
 from io import BytesIO
 
 from .elevenlabs_service import elevenlabs_service, TTSResponse
-from .openai_service import openai_service
 from .storage_service import storage_service
 
 # Configure logging

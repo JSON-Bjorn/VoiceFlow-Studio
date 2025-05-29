@@ -17,6 +17,7 @@ from app.api import (
     ai_pipeline,
     elevenlabs,
     storage,
+    audio,
 )
 
 # Load environment variables
@@ -46,6 +47,7 @@ app.include_router(stripe_api.router)
 app.include_router(ai_pipeline.router)
 app.include_router(elevenlabs.router)
 app.include_router(storage.router)
+app.include_router(audio.router)
 
 
 @app.get("/")
