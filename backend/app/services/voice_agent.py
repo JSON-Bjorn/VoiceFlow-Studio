@@ -14,6 +14,7 @@ from io import BytesIO
 
 from .elevenlabs_service import elevenlabs_service, TTSResponse
 from .openai_service import openai_service
+from .storage_service import storage_service
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -31,6 +32,8 @@ class VoiceSegment:
         duration_estimate: float,
         character_count: int,
         segment_id: str,
+        file_path: Optional[str] = None,
+        file_url: Optional[str] = None,
     ):
         self.text = text
         self.speaker = speaker
@@ -39,6 +42,8 @@ class VoiceSegment:
         self.duration_estimate = duration_estimate
         self.character_count = character_count
         self.segment_id = segment_id
+        self.file_path = file_path
+        self.file_url = file_url
         self.timestamp = datetime.utcnow()
 
 
@@ -164,6 +169,7 @@ class VoiceAgent:
         self,
         script_segments: List[Dict[str, Any]],
         context: Optional[Dict[str, Any]] = None,
+        podcast_id: Optional[str] = None,
     ) -> VoiceGenerationResult:
         """
         Generate voice audio for script segments
@@ -171,6 +177,7 @@ class VoiceAgent:
         Args:
             script_segments: List of script segments with speaker and text
             context: Additional context for voice generation
+            podcast_id: Podcast identifier
 
         Returns:
             VoiceGenerationResult with generated audio segments
@@ -196,7 +203,9 @@ class VoiceAgent:
             # Generate audio for each segment
             for i, segment in enumerate(validated_segments):
                 try:
-                    voice_segment = await self._generate_segment_audio(segment, i)
+                    voice_segment = await self._generate_segment_audio(
+                        segment, i, podcast_id
+                    )
                     result.segments.append(voice_segment)
                     result.total_characters += voice_segment.character_count
                     result.total_duration += voice_segment.duration_estimate
@@ -271,7 +280,10 @@ class VoiceAgent:
         return validated
 
     async def _generate_segment_audio(
-        self, segment: Dict[str, Any], segment_index: int
+        self,
+        segment: Dict[str, Any],
+        segment_index: int,
+        podcast_id: Optional[str] = None,
     ) -> VoiceSegment:
         """Generate audio for a single segment"""
         text = segment["text"]
@@ -282,6 +294,30 @@ class VoiceAgent:
         tts_response = await elevenlabs_service.generate_podcast_segment(
             text=text, speaker=speaker, model_id=self.default_model
         )
+
+        # Save audio file to storage
+        file_path = None
+        file_url = None
+        if podcast_id and tts_response.audio_data:
+            try:
+                segment_id = f"segment_{segment_index:03d}_{speaker}"
+                file_path = await storage_service.save_audio_file(
+                    audio_data=tts_response.audio_data,
+                    podcast_id=podcast_id,
+                    segment_id=segment_id,
+                    file_type="mp3",
+                    metadata={
+                        "speaker": speaker,
+                        "voice_id": voice_profile["voice_id"],
+                        "text_preview": text[:100] + "..." if len(text) > 100 else text,
+                        "character_count": tts_response.character_count,
+                        "segment_index": segment_index,
+                    },
+                )
+                file_url = await storage_service.get_file_url(file_path)
+                logger.info(f"Saved audio segment to storage: {file_path}")
+            except Exception as e:
+                logger.error(f"Failed to save audio segment to storage: {e}")
 
         # Estimate duration (rough calculation: ~150 words per minute)
         word_count = len(text.split())
@@ -300,10 +336,12 @@ class VoiceAgent:
             duration_estimate=duration_estimate,
             character_count=tts_response.character_count,
             segment_id=f"segment_{segment_index:03d}_{speaker}",
+            file_path=file_path,
+            file_url=file_url,
         )
 
         logger.info(
-            f"Generating podcast segment for {speaker} ({voice_profile['name']})"
+            f"Generated audio segment for {speaker} ({voice_profile['name']}): {len(text)} chars, {duration_estimate:.1f}s"
         )
 
         return voice_segment
@@ -314,7 +352,11 @@ class VoiceAgent:
         return cost_estimate.get("estimated_cost_usd", 0.0)
 
     async def generate_single_voice(
-        self, text: str, speaker: str = "host_1", model_id: Optional[str] = None
+        self,
+        text: str,
+        speaker: str = "host_1",
+        model_id: Optional[str] = None,
+        podcast_id: Optional[str] = None,
     ) -> VoiceSegment:
         """
         Generate voice for a single text segment
@@ -323,6 +365,7 @@ class VoiceAgent:
             text: Text to convert to speech
             speaker: Speaker identifier
             model_id: TTS model to use
+            podcast_id: Podcast identifier for file storage
 
         Returns:
             VoiceSegment with generated audio
@@ -350,6 +393,32 @@ class VoiceAgent:
             text=text, speaker=speaker, model_id=model_id
         )
 
+        # Save audio file to storage
+        file_path = None
+        file_url = None
+        if podcast_id and tts_response.audio_data:
+            try:
+                segment_id = (
+                    f"single_{speaker}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+                )
+                file_path = await storage_service.save_audio_file(
+                    audio_data=tts_response.audio_data,
+                    podcast_id=podcast_id,
+                    segment_id=segment_id,
+                    file_type="mp3",
+                    metadata={
+                        "speaker": speaker,
+                        "voice_id": voice_profile["voice_id"],
+                        "text_preview": text[:100] + "..." if len(text) > 100 else text,
+                        "character_count": tts_response.character_count,
+                        "type": "single_voice",
+                    },
+                )
+                file_url = await storage_service.get_file_url(file_path)
+                logger.info(f"Saved single voice audio to storage: {file_path}")
+            except Exception as e:
+                logger.error(f"Failed to save single voice audio to storage: {e}")
+
         # Estimate duration
         word_count = len(text.split())
         duration_estimate = (word_count / 150) * 60  # seconds
@@ -365,6 +434,8 @@ class VoiceAgent:
             duration_estimate=duration_estimate,
             character_count=tts_response.character_count,
             segment_id=f"single_{speaker}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
+            file_path=file_path,
+            file_url=file_url,
         )
 
         logger.info(

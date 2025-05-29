@@ -722,6 +722,7 @@ class EnhancedPipelineOrchestrator:
                     "generation_id": generation_state["id"],
                     "user_inputs": user_inputs,
                 },
+                podcast_id=str(generation_state["podcast_id"]),
             )
 
             if voice_result.success:
@@ -741,6 +742,8 @@ class EnhancedPipelineOrchestrator:
                             "duration_estimate": seg.duration_estimate,
                             "character_count": seg.character_count,
                             "audio_size_bytes": len(seg.audio_data),
+                            "file_path": seg.file_path,
+                            "file_url": seg.file_url,
                             "timestamp": seg.timestamp.isoformat(),
                         }
                         for seg in voice_result.segments
