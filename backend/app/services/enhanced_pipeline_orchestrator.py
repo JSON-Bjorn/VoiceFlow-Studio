@@ -2,6 +2,7 @@ from typing import Dict, List, Optional, Any, Callable
 from .research_agent import ResearchAgent
 from .content_planning_agent import ContentPlanningAgent
 from .openai_service import OpenAIService
+from .voice_agent import voice_agent
 from ..models.podcast import Podcast
 from ..services.podcast_service import PodcastService
 from sqlalchemy.orm import Session
@@ -24,6 +25,7 @@ class EnhancedPipelineOrchestrator:
     4. Enhanced user input handling
     5. Quality-driven regeneration
     6. Parallel processing where possible
+    7. Voice generation integration with ElevenLabs
     """
 
     def __init__(self, db: Session):
@@ -32,6 +34,7 @@ class EnhancedPipelineOrchestrator:
         self.content_planning_agent = ContentPlanningAgent()
         self.openai_service = OpenAIService()
         self.podcast_service = PodcastService(db)
+        self.voice_agent = voice_agent
 
         # Enhanced state tracking
         self.current_generation = None
@@ -65,13 +68,13 @@ class EnhancedPipelineOrchestrator:
             "target_duration": 10,
             "hosts": {
                 "host_1": {
-                    "name": "Alex",
+                    "name": "Felix",
                     "personality": "analytical, curious",
                     "voice_id": "voice_123",
                     "role": "primary_questioner"
                 },
                 "host_2": {
-                    "name": "Sam",
+                    "name": "Bjorn",
                     "personality": "enthusiastic, relatable",
                     "voice_id": "voice_456",
                     "role": "storyteller"
@@ -141,7 +144,26 @@ class EnhancedPipelineOrchestrator:
                     "script", script_result, generation_state
                 )
 
-            # Phase 4: Final Quality Validation and Optimization
+            # Phase 4: Voice Generation (Optional)
+            voice_result = None
+            if (
+                user_inputs.get("generate_voice", False)
+                and self.voice_agent.is_available()
+            ):
+                await self._update_progress(
+                    progress_callback, "Generating voice audio", 70
+                )
+                voice_result = await self._voice_generation_phase(
+                    script_result["data"], user_inputs, generation_state
+                )
+
+                if voice_result and not voice_result["success"]:
+                    logger.warning(
+                        f"Voice generation failed: {voice_result.get('error', 'Unknown error')}"
+                    )
+                    # Continue without voice - this is optional
+
+            # Phase 5: Final Quality Validation and Optimization
             await self._update_progress(
                 progress_callback, "Final quality validation", 80
             )
@@ -152,7 +174,7 @@ class EnhancedPipelineOrchestrator:
                 generation_state,
             )
 
-            # Phase 5: Save and Complete
+            # Phase 6: Save and Complete
             await self._update_progress(
                 progress_callback, "Saving optimized content", 95
             )
@@ -162,6 +184,7 @@ class EnhancedPipelineOrchestrator:
                 planning_result["data"],
                 script_result["data"],
                 validation_result,
+                voice_result,
                 generation_state,
             )
 
@@ -174,6 +197,9 @@ class EnhancedPipelineOrchestrator:
                 "research_data": research_result["data"],
                 "content_plan": planning_result["data"],
                 "script_data": script_result["data"],
+                "voice_data": voice_result["data"]
+                if voice_result and voice_result["success"]
+                else None,
                 "validation": validation_result,
                 "quality_metrics": self._calculate_overall_quality(
                     research_result["data"],
@@ -642,6 +668,175 @@ class EnhancedPipelineOrchestrator:
 
         return script_agent.refine_script(script_data, feedback)
 
+    async def _voice_generation_phase(
+        self,
+        script_data: Dict[str, Any],
+        user_inputs: Dict[str, Any],
+        generation_state: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Generate voice audio for script segments using ElevenLabs TTS
+
+        Args:
+            script_data: Generated script with segments
+            user_inputs: User inputs including host configurations
+            generation_state: Current generation state
+
+        Returns:
+            Voice generation result
+        """
+        try:
+            logger.info("Starting voice generation phase")
+
+            # Check if voice agent is available
+            if not self.voice_agent.is_available():
+                return {
+                    "success": False,
+                    "error": "Voice generation service not available",
+                    "data": None,
+                }
+
+            # Extract script segments for voice generation
+            script_segments = self._extract_voice_segments(script_data, user_inputs)
+
+            if not script_segments:
+                return {
+                    "success": False,
+                    "error": "No valid script segments found for voice generation",
+                    "data": None,
+                }
+
+            # Estimate cost before generation
+            cost_estimate = await self.voice_agent.estimate_generation_cost(
+                script_segments
+            )
+            logger.info(
+                f"Voice generation cost estimate: ${cost_estimate.get('estimated_cost_usd', 0):.4f}"
+            )
+
+            # Generate voice segments
+            voice_result = await self.voice_agent.generate_voice_segments(
+                script_segments,
+                context={
+                    "podcast_id": generation_state["podcast_id"],
+                    "generation_id": generation_state["id"],
+                    "user_inputs": user_inputs,
+                },
+            )
+
+            if voice_result.success:
+                generation_state["phases_completed"].append("voice_generation")
+                generation_state["quality_scores"]["voice_generation"] = (
+                    100  # Successful generation
+                )
+
+                # Prepare voice data for response
+                voice_data = {
+                    "segments": [
+                        {
+                            "segment_id": seg.segment_id,
+                            "text": seg.text,
+                            "speaker": seg.speaker,
+                            "voice_id": seg.voice_id,
+                            "duration_estimate": seg.duration_estimate,
+                            "character_count": seg.character_count,
+                            "audio_size_bytes": len(seg.audio_data),
+                            "timestamp": seg.timestamp.isoformat(),
+                        }
+                        for seg in voice_result.segments
+                    ],
+                    "total_duration": voice_result.total_duration,
+                    "total_characters": voice_result.total_characters,
+                    "total_cost": voice_result.total_cost,
+                    "generation_time": voice_result.generation_time,
+                    "segments_count": len(voice_result.segments),
+                }
+
+                logger.info(
+                    f"Voice generation completed: {len(voice_result.segments)} segments, {voice_result.total_duration:.1f}s total"
+                )
+
+                return {
+                    "success": True,
+                    "data": voice_data,
+                    "cost_estimate": cost_estimate,
+                    "generation_result": voice_result,
+                }
+            else:
+                logger.error(f"Voice generation failed: {voice_result.error_message}")
+                return {
+                    "success": False,
+                    "error": voice_result.error_message,
+                    "data": None,
+                    "cost_estimate": cost_estimate,
+                }
+
+        except Exception as e:
+            logger.error(f"Voice generation phase failed: {e}")
+            return {"success": False, "error": str(e), "data": None}
+
+    def _extract_voice_segments(
+        self, script_data: Dict[str, Any], user_inputs: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """
+        Extract voice segments from script data for TTS generation
+
+        Args:
+            script_data: Generated script with segments
+            user_inputs: User inputs including host configurations
+
+        Returns:
+            List of voice segments ready for TTS
+        """
+        voice_segments = []
+
+        try:
+            # Get host configurations
+            hosts_config = user_inputs.get("hosts", {})
+
+            # Extract segments from script
+            script_segments = script_data.get("segments", [])
+
+            for segment in script_segments:
+                # Skip non-dialogue segments
+                if segment.get("type") not in ["dialogue", "main_content"]:
+                    continue
+
+                # Extract speaker and text
+                speaker = segment.get("speaker", "host_1")
+                text = segment.get("text", "").strip()
+
+                # Skip empty or very short segments
+                if len(text) < 10:
+                    continue
+
+                # Map speaker to voice configuration
+                if speaker in hosts_config:
+                    host_config = hosts_config[speaker]
+                    # Use configured voice_id if available
+                    voice_id = host_config.get("voice_id")
+                else:
+                    # Use default mapping
+                    voice_id = None
+
+                voice_segments.append(
+                    {
+                        "text": text,
+                        "speaker": speaker,
+                        "voice_id": voice_id,
+                        "segment_type": segment.get("type", "dialogue"),
+                        "subtopic": segment.get("subtopic", ""),
+                        "original_segment": segment,
+                    }
+                )
+
+            logger.info(f"Extracted {len(voice_segments)} voice segments from script")
+            return voice_segments
+
+        except Exception as e:
+            logger.error(f"Failed to extract voice segments: {e}")
+            return []
+
     async def _comprehensive_validation(
         self,
         research_data: Dict[str, Any],
@@ -829,6 +1024,7 @@ class EnhancedPipelineOrchestrator:
         content_plan: Dict[str, Any],
         script_data: Dict[str, Any],
         validation_result: Dict[str, Any],
+        voice_result: Optional[Dict[str, Any]],
         generation_state: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Save enhanced generation results"""

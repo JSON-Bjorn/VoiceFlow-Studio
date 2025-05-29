@@ -19,20 +19,31 @@ class ScriptAgent:
 
     def __init__(self):
         self.openai_service = OpenAIService()
-        self.default_hosts = self._get_default_host_personalities()
+        self.default_hosts = {
+            "host_1": {
+                "name": "Felix",
+                "personality": "analytical and engaging host",
+                "role": "primary_questioner",
+            },
+            "host_2": {
+                "name": "Bjorn",
+                "personality": "warm and curious host",
+                "role": "storyteller",
+            },
+        }
 
     def _get_default_host_personalities(self) -> Dict[str, Any]:
         """Define default host personalities"""
         return {
-            "alex": {
+            "felix": {
                 "name": "Alex",
                 "personality": "Curious and analytical, asks probing questions, likes to dig deeper into topics",
                 "speaking_style": "Thoughtful, uses phrases like 'That's fascinating' and 'Help me understand'",
                 "role": "primary_questioner",
                 "voice_characteristics": "calm, measured, slightly lower pitch",
             },
-            "sam": {
-                "name": "Sam",
+            "bjorn": {
+                "name": "Bjorn",
                 "personality": "Enthusiastic and relatable, brings topics down to earth, shares personal connections",
                 "speaking_style": "Energetic, uses phrases like 'Oh wow' and 'That reminds me of'",
                 "role": "enthusiastic_responder",

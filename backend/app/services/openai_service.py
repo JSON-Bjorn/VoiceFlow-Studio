@@ -142,14 +142,14 @@ class OpenAIService:
         if not host_personalities:
             host_personalities = {
                 "host_1": {
-                    "name": "Alex",
-                    "personality": "Curious and analytical, asks probing questions, likes to dig deeper into topics",
-                    "speaking_style": "Thoughtful, uses phrases like 'That's fascinating' and 'Help me understand'",
+                    "name": "Felix",
+                    "personality": "analytical and engaging",
+                    "role": "primary_questioner",
                 },
                 "host_2": {
-                    "name": "Sam",
-                    "personality": "Enthusiastic and relatable, brings topics down to earth, shares personal connections",
-                    "speaking_style": "Energetic, uses phrases like 'Oh wow' and 'That reminds me of'",
+                    "name": "Bjorn",
+                    "personality": "warm and curious",
+                    "role": "storyteller",
                 },
             }
 
@@ -178,8 +178,12 @@ class OpenAIService:
                     "type": "intro",
                     "duration_estimate": 1,
                     "dialogue": [
-                        {{"speaker": "Alex", "text": "Welcome to our show..."}},
-                        {{"speaker": "Sam", "text": "Today we're diving into..."}}
+                        {{"speaker": "Felix", "text": "Welcome to our show..."}},
+                        {{"speaker": "Bjorn", "text": "Today we're exploring..."}},
+                        {{"speaker": "Felix", "text": "That's fascinating..."}},
+                        {{"speaker": "Bjorn", "text": "Let me break that down..."}},
+                        {{"speaker": "Felix", "text": "So let's start with..."}},
+                        {{"speaker": "Bjorn", "text": "That's really interesting because..."}}
                     ]
                 }},
                 {{
@@ -187,8 +191,8 @@ class OpenAIService:
                     "subtopic": "Subtopic Title",
                     "duration_estimate": 3,
                     "dialogue": [
-                        {{"speaker": "Alex", "text": "So let's start with..."}},
-                        {{"speaker": "Sam", "text": "That's really interesting because..."}}
+                        {{"speaker": "Felix", "text": "So let's start with..."}},
+                        {{"speaker": "Bjorn", "text": "That's really interesting because..."}}
                     ]
                 }}
             ]
