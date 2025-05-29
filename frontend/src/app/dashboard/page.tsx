@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { CreditBalance } from '@/components/ui/credit-balance'
 import { Mic, Plus, User, CreditCard, History, LogOut, Settings } from 'lucide-react'
-import { apiClient, User as UserType, CreditSummary } from '@/lib/api'
+import { api, User as UserType, CreditSummary } from '@/lib/api'
 
 export default function DashboardPage() {
     const router = useRouter()
@@ -18,11 +18,11 @@ export default function DashboardPage() {
     useEffect(() => {
         const loadUserData = async () => {
             try {
-                const userData = await apiClient.getCurrentUser()
+                const userData = await api.getCurrentUser()
                 setUser(userData)
 
                 // Load credit summary
-                const summary = await apiClient.getCreditSummary()
+                const summary = await api.getCreditSummary()
                 setCreditSummary(summary)
             } catch (error) {
                 // If we can't get user data, redirect to login
@@ -36,7 +36,7 @@ export default function DashboardPage() {
     }, [router])
 
     const handleLogout = () => {
-        apiClient.logout()
+        api.logout()
         router.push('/')
     }
 

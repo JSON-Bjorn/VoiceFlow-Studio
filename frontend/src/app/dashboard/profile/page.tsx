@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Mic, ArrowLeft, User, Mail, Lock, Save, Eye, EyeOff, Loader2 } from 'lucide-react'
-import { apiClient, User as UserType } from '@/lib/api'
+import { api, User as UserType } from '@/lib/api'
 
 export default function ProfilePage() {
     const router = useRouter()
@@ -29,7 +29,7 @@ export default function ProfilePage() {
     useEffect(() => {
         const loadUser = async () => {
             try {
-                const userData = await apiClient.getCurrentUser()
+                const userData = await api.getCurrentUser()
                 setUser(userData)
                 setProfileData(prev => ({ ...prev, email: userData.email }))
             } catch (error) {
@@ -56,7 +56,7 @@ export default function ProfilePage() {
         setSuccess('')
 
         try {
-            const updatedUser = await apiClient.updateEmail({ email: profileData.email })
+            const updatedUser = await api.updateEmail({ email: profileData.email })
             setUser(updatedUser)
             setSuccess('Email updated successfully!')
         } catch (err) {
@@ -85,7 +85,7 @@ export default function ProfilePage() {
         }
 
         try {
-            await apiClient.updatePassword({
+            await api.updatePassword({
                 current_password: profileData.currentPassword,
                 new_password: profileData.newPassword
             })

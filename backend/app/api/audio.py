@@ -3,11 +3,12 @@ Audio Agent API endpoints for VoiceFlow Studio
 
 This module provides endpoints for audio processing operations:
 - Audio assembly (combining voice segments into complete episodes)
+- Audio assets management (intro/outro music, effects)
 - Audio health checks
 - Audio processing status
 """
 
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, UploadFile, File
 from pydantic import BaseModel, Field
 from typing import Dict, List, Any, Optional
 from datetime import datetime
@@ -33,8 +34,8 @@ class AudioAssemblyRequest(BaseModel):
     episode_metadata: Optional[Dict[str, Any]] = Field(
         None, description="Optional episode metadata"
     )
-    processing_options: Optional[Dict[str, Any]] = Field(
-        None, description="Optional audio processing options"
+    audio_options: Optional[Dict[str, Any]] = Field(
+        None, description="Optional audio processing options (intro/outro, effects)"
     )
 
 
@@ -63,6 +64,27 @@ class AudioHealthResponse(BaseModel):
     details: Dict[str, Any]
 
 
+class AudioAssetResponse(BaseModel):
+    """Response model for audio assets"""
+
+    id: str
+    type: str  # intro, outro, transition, background
+    duration: float
+    metadata: Dict[str, Any]
+
+
+class AudioAssetUploadRequest(BaseModel):
+    """Request model for uploading custom audio assets"""
+
+    asset_id: str = Field(..., description="Unique identifier for the asset")
+    asset_type: str = Field(
+        ..., description="Type of asset (intro, outro, transition, background)"
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        None, description="Optional metadata for the asset"
+    )
+
+
 @router.get("/health", response_model=AudioHealthResponse)
 async def get_audio_health():
     """Get Audio Agent health status"""
@@ -86,6 +108,7 @@ async def assemble_podcast_episode(
     - Takes individual voice segments
     - Combines them with proper transitions
     - Applies audio processing (normalization, compression)
+    - Adds intro/outro music and effects if specified
     - Exports final episode file
     """
     try:
@@ -104,11 +127,12 @@ async def assemble_podcast_episode(
                 status_code=400, detail="No voice segments provided for assembly"
             )
 
-        # Perform audio assembly
+        # Perform audio assembly with enhanced options
         result = await audio_agent.assemble_podcast_episode(
             voice_segments=request.voice_segments,
             podcast_id=request.podcast_id,
             episode_metadata=request.episode_metadata,
+            audio_options=request.audio_options,
         )
 
         # Prepare response
@@ -173,6 +197,147 @@ async def get_audio_agents_status(current_user: User = Depends(get_current_user)
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/assets", response_model=Dict[str, AudioAssetResponse])
+async def get_available_audio_assets(current_user: User = Depends(get_current_user)):
+    """Get list of available audio assets for intro/outro music and effects"""
+    try:
+        if not audio_agent.is_available():
+            raise HTTPException(status_code=503, detail="Audio processing unavailable")
+
+        assets = await audio_agent.get_available_assets()
+
+        response = {}
+        for asset_id, asset_data in assets.items():
+            response[asset_id] = AudioAssetResponse(**asset_data)
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get audio assets: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/assets/upload")
+async def upload_custom_audio_asset(
+    file: UploadFile = File(...),
+    asset_id: str = Field(..., description="Unique identifier for the asset"),
+    asset_type: str = Field(
+        ..., description="Type of asset (intro, outro, transition, background)"
+    ),
+    current_user: User = Depends(get_current_user),
+):
+    """Upload a custom audio asset for use in podcast generation"""
+    try:
+        if not audio_agent.is_available():
+            raise HTTPException(status_code=503, detail="Audio processing unavailable")
+
+        # Validate asset type
+        valid_types = ["intro", "outro", "transition", "background"]
+        if asset_type not in valid_types:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid asset type. Must be one of: {', '.join(valid_types)}",
+            )
+
+        # Validate file type
+        allowed_extensions = [".mp3", ".wav", ".m4a", ".ogg"]
+        file_extension = None
+        for ext in allowed_extensions:
+            if file.filename.lower().endswith(ext):
+                file_extension = ext
+                break
+
+        if not file_extension:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type. Allowed extensions: {', '.join(allowed_extensions)}",
+            )
+
+        # Save uploaded file temporarily
+        import tempfile
+        import os
+
+        with tempfile.NamedTemporaryFile(
+            delete=False, suffix=file_extension
+        ) as temp_file:
+            content = await file.read()
+            temp_file.write(content)
+            temp_file_path = temp_file.name
+
+        try:
+            # Load the asset into Audio Agent
+            metadata = {
+                "filename": file.filename,
+                "file_size": len(content),
+                "uploaded_by": current_user.id,
+                "upload_time": datetime.utcnow().isoformat(),
+                "user_uploaded": True,
+            }
+
+            success = await audio_agent.load_custom_asset(
+                asset_id=asset_id,
+                asset_type=asset_type,
+                file_path=temp_file_path,
+                metadata=metadata,
+            )
+
+            if not success:
+                raise HTTPException(
+                    status_code=500, detail="Failed to load audio asset"
+                )
+
+            logger.info(
+                f"Uploaded custom audio asset: {asset_id} ({asset_type}) by user {current_user.id}"
+            )
+
+            return {
+                "success": True,
+                "asset_id": asset_id,
+                "asset_type": asset_type,
+                "filename": file.filename,
+                "file_size": len(content),
+                "message": "Audio asset uploaded successfully",
+            }
+
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(temp_file_path)
+            except:
+                pass
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to upload audio asset: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/assets/{asset_id}")
+async def get_audio_asset_info(
+    asset_id: str, current_user: User = Depends(get_current_user)
+):
+    """Get information about a specific audio asset"""
+    try:
+        if not audio_agent.is_available():
+            raise HTTPException(status_code=503, detail="Audio processing unavailable")
+
+        assets = await audio_agent.get_available_assets()
+
+        if asset_id not in assets:
+            raise HTTPException(status_code=404, detail="Audio asset not found")
+
+        return assets[asset_id]
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get audio asset info: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/processing/options")
 async def get_audio_processing_options():
     """Get available audio processing options and settings"""
@@ -198,35 +363,27 @@ async def get_audio_processing_options():
                 "enabled": True,
                 "threshold_db": audio_agent.remove_silence_threshold,
                 "max_duration_ms": audio_agent.max_silence_duration,
-                "description": "Remove excessive silence while preserving natural pauses",
+                "description": "Remove excessive silence from audio segments",
             },
             "speaker_transitions": {
+                "enabled": True,
                 "pause_duration_ms": audio_agent.speaker_transition_pause,
                 "description": "Add natural pauses between different speakers",
             },
-            "segment_transitions": {
-                "pause_duration_ms": audio_agent.segment_transition_pause,
-                "description": "Add brief pauses between segments from same speaker",
-            },
         },
-        "quality_settings": {
-            "default": {
-                "format": audio_agent.default_format,
-                "bitrate": audio_agent.default_bitrate,
-                "sample_rate": audio_agent.default_sample_rate,
-                "channels": audio_agent.default_channels,
+        "audio_enhancement_options": {
+            "intro_outro": {
+                "description": "Add professional intro and outro music",
+                "styles": ["overlay", "sequential"],
+                "default_assets": ["default_intro", "default_outro"],
             },
-            "high_quality": {
-                "format": "mp3",
-                "bitrate": "320k",
-                "sample_rate": 48000,
-                "channels": 2,
+            "transition_effects": {
+                "description": "Add transition sound effects between segments",
+                "available_effects": ["default_transition", "whoosh_transition"],
             },
-            "compact": {
-                "format": "mp3",
-                "bitrate": "96k",
-                "sample_rate": 22050,
-                "channels": 1,
+            "background_music": {
+                "description": "Add subtle background music throughout the episode",
+                "note": "Requires custom uploaded background music asset",
             },
         },
     }

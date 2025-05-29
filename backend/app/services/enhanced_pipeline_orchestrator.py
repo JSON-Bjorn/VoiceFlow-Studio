@@ -1224,11 +1224,50 @@ class EnhancedPipelineOrchestrator:
                 ),
             }
 
-            # Assemble podcast episode
+            # Prepare audio processing options
+            audio_options = {
+                # Default intro/outro settings
+                "add_intro": user_inputs.get("audio_options", {}).get(
+                    "add_intro", True
+                ),
+                "add_outro": user_inputs.get("audio_options", {}).get(
+                    "add_outro", True
+                ),
+                "intro_style": user_inputs.get("audio_options", {}).get(
+                    "intro_style", "overlay"
+                ),
+                "outro_style": user_inputs.get("audio_options", {}).get(
+                    "outro_style", "overlay"
+                ),
+                # Audio asset selection
+                "intro_asset_id": user_inputs.get("audio_options", {}).get(
+                    "intro_asset_id", "default_intro"
+                ),
+                "outro_asset_id": user_inputs.get("audio_options", {}).get(
+                    "outro_asset_id", "default_outro"
+                ),
+                # Effects settings
+                "add_transitions": user_inputs.get("audio_options", {}).get(
+                    "add_transitions", False
+                ),
+                "transition_asset_id": user_inputs.get("audio_options", {}).get(
+                    "transition_asset_id", "default_transition"
+                ),
+                # Background music (optional)
+                "add_background_music": user_inputs.get("audio_options", {}).get(
+                    "add_background_music", False
+                ),
+                "background_asset_id": user_inputs.get("audio_options", {}).get(
+                    "background_asset_id"
+                ),
+            }
+
+            # Assemble podcast episode with audio options
             assembly_result = await self.audio_agent.assemble_podcast_episode(
                 voice_segments=voice_segments,
                 podcast_id=str(generation_state["podcast_id"]),
                 episode_metadata=episode_metadata,
+                audio_options=audio_options,
             )
 
             if assembly_result.success:
@@ -1251,12 +1290,21 @@ class EnhancedPipelineOrchestrator:
                         "compression": True,
                         "silence_removal": True,
                         "speaker_transitions": True,
+                        "intro_music": audio_options.get("add_intro", False),
+                        "outro_music": audio_options.get("add_outro", False),
+                        "transition_effects": audio_options.get(
+                            "add_transitions", False
+                        ),
+                        "background_music": audio_options.get(
+                            "add_background_music", False
+                        ),
                     },
+                    "audio_options_used": audio_options,
                 }
 
                 logger.info(
                     f"Audio assembly completed: {assembly_result.total_duration:.1f}s final episode, "
-                    f"{assembly_result.segments_processed} segments processed"
+                    f"{assembly_result.segments_processed} segments processed with enhanced audio processing"
                 )
 
                 return {

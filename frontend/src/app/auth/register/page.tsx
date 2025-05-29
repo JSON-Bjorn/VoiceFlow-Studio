@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Mic, Eye, EyeOff, Check, Loader2 } from 'lucide-react'
-import { apiClient } from '@/lib/api'
+import { api } from '@/lib/api'
 
 export default function RegisterPage() {
     const router = useRouter()
@@ -41,7 +41,7 @@ export default function RegisterPage() {
         }
 
         try {
-            await apiClient.register({
+            await api.register({
                 email: formData.email,
                 password: formData.password
             })
@@ -195,8 +195,8 @@ export default function RegisterPage() {
                                     />
                                     <div
                                         className={`w-4 h-4 rounded border-2 flex items-center justify-center cursor-pointer ${formData.acceptTerms
-                                                ? 'bg-purple-600 border-purple-600'
-                                                : 'border-slate-600 bg-slate-700'
+                                            ? 'bg-purple-600 border-purple-600'
+                                            : 'border-slate-600 bg-slate-700'
                                             } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
                                         onClick={() => !isLoading && setFormData(prev => ({ ...prev, acceptTerms: !prev.acceptTerms }))}
                                     >

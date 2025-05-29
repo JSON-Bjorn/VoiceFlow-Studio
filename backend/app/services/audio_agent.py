@@ -16,8 +16,14 @@ from pathlib import Path
 
 try:
     from pydub import AudioSegment
-    from pydub.effects import normalize, compress_dynamic_range
+    from pydub.effects import (
+        normalize,
+        compress_dynamic_range,
+        low_pass_filter,
+        high_pass_filter,
+    )
     from pydub.silence import split_on_silence, detect_leading_silence
+    from pydub.generators import Sine, Square, Sawtooth, Triangle, WhiteNoise
 
     PYDUB_AVAILABLE = True
 except ImportError:
@@ -28,6 +34,26 @@ from .storage_service import storage_service
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+
+class AudioAsset:
+    """Represents an audio asset (intro, outro, transition, etc.)"""
+
+    def __init__(
+        self,
+        asset_id: str,
+        asset_type: str,  # "intro", "outro", "transition", "background"
+        file_path: Optional[str] = None,
+        audio_data: Optional[AudioSegment] = None,
+        duration: float = 0.0,
+        metadata: Optional[Dict[str, Any]] = None,
+    ):
+        self.asset_id = asset_id
+        self.asset_type = asset_type
+        self.file_path = file_path
+        self.audio_data = audio_data
+        self.duration = duration
+        self.metadata = metadata or {}
 
 
 class AudioProcessingResult:
@@ -75,6 +101,7 @@ class AudioAgent:
     - Adds proper audio transitions and timing
     - Handles audio quality optimization
     - Manages intro/outro music integration
+    - Applies audio effects and enhancements
     - Exports final podcast episodes
     """
 
@@ -82,7 +109,7 @@ class AudioAgent:
         """Initialize the Audio Agent"""
         self.agent_name = "Audio Agent"
         self.agent_type = "audio_processing"
-        self.version = "1.0.0"
+        self.version = "1.1.0"
 
         # Audio processing settings
         self.default_format = "mp3"
@@ -94,6 +121,8 @@ class AudioAgent:
         self.speaker_transition_pause = 500  # 0.5 seconds between speakers
         self.segment_transition_pause = 300  # 0.3 seconds between segments
         self.intro_outro_fade = 2000  # 2 seconds fade for intro/outro
+        self.music_fade_in = 1500  # 1.5 seconds fade in for music
+        self.music_fade_out = 1500  # 1.5 seconds fade out for music
 
         # Audio processing settings
         self.normalize_audio = True
@@ -101,11 +130,182 @@ class AudioAgent:
         self.remove_silence_threshold = -50  # dB
         self.max_silence_duration = 1000  # 1 second max silence
 
+        # Music and effects settings
+        self.intro_music_volume = -20  # dB reduction for background music
+        self.outro_music_volume = -18  # dB reduction for outro music
+        self.transition_effect_volume = -25  # dB reduction for transition effects
+        self.background_music_volume = -30  # dB reduction for background music
+
+        # Asset storage
+        self.audio_assets: Dict[str, AudioAsset] = {}
+        self.asset_directory = "backend/storage/audio/assets"
+
         # Check dependencies
         if not PYDUB_AVAILABLE:
             logger.warning("PyDub not available. Audio processing will be limited.")
 
-        logger.info(f"{self.agent_name} initialized successfully")
+        # Initialize default assets when first used (lazy initialization)
+        self._assets_initialized = False
+
+        logger.info(f"{self.agent_name} v{self.version} initialized successfully")
+
+    async def _ensure_assets_initialized(self):
+        """Ensure default assets are initialized (lazy loading)"""
+        if not self._assets_initialized and PYDUB_AVAILABLE:
+            await self._initialize_default_assets()
+            self._assets_initialized = True
+
+    async def _initialize_default_assets(self):
+        """Initialize default audio assets"""
+        try:
+            # Create assets directory if it doesn't exist
+            os.makedirs(self.asset_directory, exist_ok=True)
+
+            # Create default intro music (professional podcast intro)
+            await self._create_default_intro()
+
+            # Create default outro music
+            await self._create_default_outro()
+
+            # Create transition sound effects
+            await self._create_transition_effects()
+
+            logger.info("Default audio assets initialized")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize default assets: {e}")
+
+    async def _create_default_intro(self):
+        """Create a default professional podcast intro"""
+        try:
+            if not PYDUB_AVAILABLE:
+                return
+
+            # Create a professional-sounding intro with layered tones
+            base_tone = Sine(220).to_audio_segment(duration=3000)  # A3 note
+            harmony = Sine(330).to_audio_segment(duration=3000)  # E4 note
+            bass = Sine(110).to_audio_segment(duration=3000)  # A2 note
+
+            # Layer the tones with different volumes
+            intro = (
+                base_tone.apply_gain(-6) + harmony.apply_gain(-9) + bass.apply_gain(-12)
+            )
+
+            # Add fade in and out
+            intro = intro.fade_in(500).fade_out(1000)
+
+            # Add some reverb effect by overlaying delayed versions
+            delayed = intro.apply_gain(-15)
+            intro = intro.overlay(delayed, position=100)  # 100ms delay
+            intro = intro.overlay(delayed, position=200)  # 200ms delay
+
+            # Create asset
+            asset = AudioAsset(
+                asset_id="default_intro",
+                asset_type="intro",
+                audio_data=intro,
+                duration=len(intro) / 1000.0,
+                metadata={
+                    "name": "Professional Podcast Intro",
+                    "description": "Default professional intro with harmonic tones",
+                    "generated": True,
+                },
+            )
+
+            self.audio_assets["default_intro"] = asset
+            logger.debug("Created default intro music")
+
+        except Exception as e:
+            logger.error(f"Failed to create default intro: {e}")
+
+    async def _create_default_outro(self):
+        """Create a default professional podcast outro"""
+        try:
+            if not PYDUB_AVAILABLE:
+                return
+
+            # Create a warm, concluding outro
+            base_tone = Sine(196).to_audio_segment(duration=4000)  # G3 note
+            harmony = Sine(294).to_audio_segment(duration=4000)  # D4 note
+
+            # Create a gentle fade out outro
+            outro = base_tone.apply_gain(-8) + harmony.apply_gain(-12)
+            outro = outro.fade_in(1000).fade_out(2000)
+
+            # Add subtle modulation
+            for i in range(0, len(outro), 200):
+                if i + 200 <= len(outro):
+                    segment = outro[i : i + 200]
+                    modulated = segment.apply_gain(
+                        -1 + (i / len(outro)) * 2
+                    )  # Slight volume variation
+                    outro = outro[:i] + modulated + outro[i + 200 :]
+
+            asset = AudioAsset(
+                asset_id="default_outro",
+                asset_type="outro",
+                audio_data=outro,
+                duration=len(outro) / 1000.0,
+                metadata={
+                    "name": "Professional Podcast Outro",
+                    "description": "Default warm concluding outro",
+                    "generated": True,
+                },
+            )
+
+            self.audio_assets["default_outro"] = asset
+            logger.debug("Created default outro music")
+
+        except Exception as e:
+            logger.error(f"Failed to create default outro: {e}")
+
+    async def _create_transition_effects(self):
+        """Create default transition sound effects"""
+        try:
+            if not PYDUB_AVAILABLE:
+                return
+
+            # Create a subtle chime transition
+            chime = Sine(880).to_audio_segment(duration=500)  # A5 note
+            chime = chime.fade_in(50).fade_out(200).apply_gain(-15)
+
+            chime_asset = AudioAsset(
+                asset_id="default_transition",
+                asset_type="transition",
+                audio_data=chime,
+                duration=len(chime) / 1000.0,
+                metadata={
+                    "name": "Subtle Chime Transition",
+                    "description": "Default transition sound effect",
+                    "generated": True,
+                },
+            )
+
+            self.audio_assets["default_transition"] = chime_asset
+
+            # Create a whoosh effect for dramatic transitions
+            noise = WhiteNoise().to_audio_segment(duration=800)
+            # Apply high-pass filter to create whoosh effect
+            whoosh = high_pass_filter(noise, 1000).apply_gain(-20)
+            whoosh = whoosh.fade_in(100).fade_out(300)
+
+            whoosh_asset = AudioAsset(
+                asset_id="whoosh_transition",
+                asset_type="transition",
+                audio_data=whoosh,
+                duration=len(whoosh) / 1000.0,
+                metadata={
+                    "name": "Whoosh Transition",
+                    "description": "Dramatic whoosh transition effect",
+                    "generated": True,
+                },
+            )
+
+            self.audio_assets["whoosh_transition"] = whoosh_asset
+            logger.debug("Created transition effects")
+
+        except Exception as e:
+            logger.error(f"Failed to create transition effects: {e}")
 
     def is_available(self) -> bool:
         """Check if the Audio Agent is available"""
@@ -171,6 +371,7 @@ class AudioAgent:
         voice_segments: List[Dict[str, Any]],
         podcast_id: str,
         episode_metadata: Optional[Dict[str, Any]] = None,
+        audio_options: Optional[Dict[str, Any]] = None,
     ) -> AudioProcessingResult:
         """
         Assemble individual voice segments into a complete podcast episode
@@ -179,6 +380,7 @@ class AudioAgent:
             voice_segments: List of voice segment data with file paths
             podcast_id: Podcast identifier
             episode_metadata: Optional metadata for the episode
+            audio_options: Optional audio processing options (intro/outro, effects, etc.)
 
         Returns:
             AudioProcessingResult with final episode file
@@ -196,6 +398,9 @@ class AudioAgent:
             if not voice_segments:
                 result.error_message = "No voice segments provided for assembly"
                 return result
+
+            # Ensure assets are initialized
+            await self._ensure_assets_initialized()
 
             # Step 1: Load and validate audio segments
             audio_segments = await self._load_audio_segments(voice_segments)
@@ -215,8 +420,10 @@ class AudioAgent:
             # Step 4: Apply audio processing and optimization
             processed_audio = self._apply_audio_processing(combined_audio)
 
-            # Step 5: Add intro/outro if available
-            final_audio = await self._add_intro_outro(processed_audio, podcast_id)
+            # Step 5: Add intro/outro and effects if available
+            final_audio = await self._add_intro_outro(
+                processed_audio, podcast_id, audio_options
+            )
 
             # Step 6: Export final episode
             export_result = await self._export_final_episode(
@@ -438,18 +645,199 @@ class AudioAgent:
             return audio
 
     async def _add_intro_outro(
-        self, audio: AudioSegment, podcast_id: str
+        self,
+        audio: AudioSegment,
+        podcast_id: str,
+        options: Optional[Dict[str, Any]] = None,
     ) -> AudioSegment:
-        """Add intro/outro music if available"""
+        """Add intro/outro music and effects to the podcast episode"""
         try:
-            # Check for intro/outro files in storage
-            # For now, just return the audio as-is
-            # This will be enhanced in Task 6.5
-            return audio
+            if not PYDUB_AVAILABLE:
+                logger.warning("PyDub not available, skipping intro/outro")
+                return audio
+
+            options = options or {}
+            final_audio = audio
+
+            # Add intro music if requested
+            if options.get("add_intro", True):
+                intro_asset_id = options.get("intro_asset_id", "default_intro")
+                intro_asset = self.audio_assets.get(intro_asset_id)
+
+                if intro_asset and intro_asset.audio_data:
+                    logger.info(f"Adding intro music: {intro_asset_id}")
+
+                    # Prepare intro music
+                    intro_music = intro_asset.audio_data
+                    intro_music = intro_music.apply_gain(self.intro_music_volume)
+
+                    # Option 1: Intro music alone, then fade into content
+                    if options.get("intro_style", "overlay") == "sequential":
+                        # Add intro music followed by main content
+                        intro_with_fade = intro_music.fade_out(self.music_fade_out)
+                        silence_gap = AudioSegment.silent(duration=500)  # 0.5s pause
+                        final_audio = intro_with_fade + silence_gap + final_audio
+
+                    # Option 2: Intro music overlaid with beginning of content
+                    else:
+                        # Overlay intro music with the beginning of the main content
+                        intro_duration = min(len(intro_music), 10000)  # Max 10 seconds
+                        intro_overlay = intro_music[:intro_duration]
+
+                        # Create a version that fades out as voice starts
+                        intro_overlay = intro_overlay.fade_out(self.music_fade_out)
+
+                        # Overlay with main content
+                        final_audio = final_audio.overlay(intro_overlay, position=0)
+
+                else:
+                    logger.warning(f"Intro asset not found: {intro_asset_id}")
+
+            # Add outro music if requested
+            if options.get("add_outro", True):
+                outro_asset_id = options.get("outro_asset_id", "default_outro")
+                outro_asset = self.audio_assets.get(outro_asset_id)
+
+                if outro_asset and outro_asset.audio_data:
+                    logger.info(f"Adding outro music: {outro_asset_id}")
+
+                    # Prepare outro music
+                    outro_music = outro_asset.audio_data
+                    outro_music = outro_music.apply_gain(self.outro_music_volume)
+
+                    # Option 1: Content ends, then outro music
+                    if options.get("outro_style", "overlay") == "sequential":
+                        silence_gap = AudioSegment.silent(duration=500)  # 0.5s pause
+                        outro_with_fade = outro_music.fade_in(self.music_fade_in)
+                        final_audio = final_audio + silence_gap + outro_with_fade
+
+                    # Option 2: Outro music overlaid with end of content
+                    else:
+                        # Overlay outro music with the end of the content
+                        outro_duration = min(len(outro_music), 8000)  # Max 8 seconds
+                        outro_overlay = outro_music[:outro_duration]
+                        outro_overlay = outro_overlay.fade_in(self.music_fade_in)
+
+                        # Calculate position to start outro (near the end)
+                        start_position = max(
+                            0, len(final_audio) - outro_duration + 2000
+                        )
+                        final_audio = final_audio.overlay(
+                            outro_overlay, position=start_position
+                        )
+
+                else:
+                    logger.warning(f"Outro asset not found: {outro_asset_id}")
+
+            # Add transition effects if requested
+            if options.get("add_transitions", False):
+                transition_asset_id = options.get(
+                    "transition_asset_id", "default_transition"
+                )
+                transition_asset = self.audio_assets.get(transition_asset_id)
+
+                if transition_asset and transition_asset.audio_data:
+                    logger.info(f"Adding transition effects: {transition_asset_id}")
+
+                    # This would require more complex logic to detect good transition points
+                    # For now, we'll skip automatic transition insertion
+                    # This could be enhanced to detect speaker changes or topic shifts
+                    pass
+
+            # Add background music if requested
+            if options.get("add_background_music", False):
+                await self._add_background_music(final_audio, options)
+
+            logger.info(
+                f"Intro/outro processing complete. Final duration: {len(final_audio) / 1000:.2f}s"
+            )
+            return final_audio
 
         except Exception as e:
-            logger.warning(f"Failed to add intro/outro: {e}")
+            logger.error(f"Failed to add intro/outro: {e}")
             return audio
+
+    async def _add_background_music(
+        self, audio: AudioSegment, options: Dict[str, Any]
+    ) -> AudioSegment:
+        """Add subtle background music throughout the episode"""
+        try:
+            background_asset_id = options.get("background_asset_id")
+            if not background_asset_id:
+                return audio
+
+            background_asset = self.audio_assets.get(background_asset_id)
+            if not background_asset or not background_asset.audio_data:
+                return audio
+
+            logger.info(f"Adding background music: {background_asset_id}")
+
+            background_music = background_asset.audio_data
+            background_music = background_music.apply_gain(self.background_music_volume)
+
+            # Loop background music to match content length
+            content_duration = len(audio)
+            if len(background_music) < content_duration:
+                loops_needed = (content_duration // len(background_music)) + 1
+                background_music = background_music * loops_needed
+
+            # Trim to exact length and add fades
+            background_music = background_music[:content_duration]
+            background_music = background_music.fade_in(2000).fade_out(2000)
+
+            # Overlay with main content
+            return audio.overlay(background_music)
+
+        except Exception as e:
+            logger.error(f"Failed to add background music: {e}")
+            return audio
+
+    async def get_available_assets(self) -> Dict[str, Dict[str, Any]]:
+        """Get list of available audio assets"""
+        # Ensure assets are initialized
+        await self._ensure_assets_initialized()
+
+        assets = {}
+        for asset_id, asset in self.audio_assets.items():
+            assets[asset_id] = {
+                "id": asset_id,
+                "type": asset.asset_type,
+                "duration": asset.duration,
+                "metadata": asset.metadata,
+            }
+        return assets
+
+    async def load_custom_asset(
+        self,
+        asset_id: str,
+        asset_type: str,
+        file_path: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Load a custom audio asset from file"""
+        try:
+            if not PYDUB_AVAILABLE:
+                return False
+
+            # Load audio file
+            audio_data = AudioSegment.from_file(file_path)
+
+            asset = AudioAsset(
+                asset_id=asset_id,
+                asset_type=asset_type,
+                file_path=file_path,
+                audio_data=audio_data,
+                duration=len(audio_data) / 1000.0,
+                metadata=metadata or {},
+            )
+
+            self.audio_assets[asset_id] = asset
+            logger.info(f"Loaded custom asset: {asset_id} ({asset_type})")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to load custom asset {asset_id}: {e}")
+            return False
 
     async def _export_final_episode(
         self,

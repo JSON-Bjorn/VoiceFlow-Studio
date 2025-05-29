@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Mic, Eye, EyeOff, Loader2 } from 'lucide-react'
-import { apiClient } from '@/lib/api'
+import { api } from '@/lib/api'
 
 export default function LoginPage() {
     const router = useRouter()
@@ -24,7 +24,7 @@ export default function LoginPage() {
         setError('')
 
         try {
-            await apiClient.login(formData)
+            await api.login(formData)
             // Redirect to dashboard on successful login
             router.push('/dashboard')
         } catch (err) {

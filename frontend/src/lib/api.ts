@@ -324,6 +324,120 @@ class ApiClient {
         })
     }
 
+    // Enhanced AI Pipeline with Voice Generation
+    async generatePodcastWithAI(id: number, options?: {
+        generateVoice?: boolean;
+        hostPersonalities?: {
+            host_1?: { name: string; personality: string; voice_id?: string; role?: string };
+            host_2?: { name: string; personality: string; voice_id?: string; role?: string };
+        };
+        stylePreferences?: {
+            tone?: string;
+            complexity?: string;
+            humor_level?: string;
+            pacing?: string;
+        };
+        contentPreferences?: {
+            focus_areas?: string[];
+            avoid_topics?: string[];
+            target_audience?: string;
+        };
+    }): Promise<{
+        success: boolean;
+        generation_id?: string;
+        message: string;
+        result?: any;
+        voice_generated?: boolean;
+        total_duration?: number;
+        cost_estimate?: number;
+    }> {
+        const requestBody = {
+            podcast_id: id,
+            custom_settings: {
+                generate_voice: options?.generateVoice || false,
+                hosts: options?.hostPersonalities || {
+                    host_1: {
+                        name: "Felix",
+                        personality: "analytical, thoughtful, engaging",
+                        role: "primary_questioner"
+                    },
+                    host_2: {
+                        name: "Bjorn",
+                        personality: "warm, curious, conversational",
+                        role: "storyteller"
+                    }
+                },
+                style_preferences: options?.stylePreferences || {
+                    tone: "conversational",
+                    complexity: "accessible",
+                    humor_level: "light",
+                    pacing: "moderate"
+                },
+                content_preferences: options?.contentPreferences || {
+                    focus_areas: ["practical applications", "recent developments"],
+                    target_audience: "general public"
+                }
+            }
+        };
+
+        return this.request<{
+            success: boolean;
+            generation_id?: string;
+            message: string;
+            result?: any;
+            voice_generated?: boolean;
+            total_duration?: number;
+            cost_estimate?: number;
+        }>(`/api/ai-pipeline/enhanced/generate/podcast`, {
+            method: 'POST',
+            body: JSON.stringify(requestBody),
+        });
+    }
+
+    // Voice generation APIs
+    async getVoiceProfiles(): Promise<{
+        success: boolean;
+        voices: Array<{
+            voice_id: string;
+            name: string;
+            description: string;
+            category: string;
+        }>;
+    }> {
+        return this.request<{
+            success: boolean;
+            voices: Array<{
+                voice_id: string;
+                name: string;
+                description: string;
+                category: string;
+            }>;
+        }>(`/api/elevenlabs/voices`);
+    }
+
+    async estimateVoiceCost(text: string): Promise<{
+        success: boolean;
+        cost_estimate: {
+            character_count: number;
+            estimated_cost_usd: number;
+            cost_per_1k_chars: number;
+            currency: string;
+        };
+    }> {
+        return this.request<{
+            success: boolean;
+            cost_estimate: {
+                character_count: number;
+                estimated_cost_usd: number;
+                cost_per_1k_chars: number;
+                currency: string;
+            };
+        }>(`/api/elevenlabs/estimate-cost`, {
+            method: 'POST',
+            body: JSON.stringify({ text }),
+        });
+    }
+
     // Stripe payment endpoints
     async getStripeConfig(): Promise<{ publishable_key: string }> {
         return this.request<{ publishable_key: string }>('/api/stripe/config')
