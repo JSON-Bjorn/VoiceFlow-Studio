@@ -1,6 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import Dict, Any, Optional
+import logging
+import asyncio
+from datetime import datetime
 
 from ..core.database import get_db
 from ..core.auth import get_current_user
@@ -10,9 +13,13 @@ from ..services.openai_service import OpenAIService
 from ..services.research_agent import ResearchAgent
 from ..services.script_agent import ScriptAgent
 from ..services.podcast_service import PodcastService
+from ..services.enhanced_pipeline_orchestrator import EnhancedPipelineOrchestrator
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/api/ai", tags=["ai_pipeline"])
+# Configure logging
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/ai-pipeline", tags=["ai_pipeline"])
 
 
 # Request/Response models
@@ -31,6 +38,11 @@ class ResearchRequest(BaseModel):
 
 
 class ScriptGenerationRequest(BaseModel):
+    podcast_id: int
+    custom_settings: Optional[Dict[str, Any]] = None
+
+
+class EnhancedGenerationRequest(BaseModel):
     podcast_id: int
     custom_settings: Optional[Dict[str, Any]] = None
 
@@ -278,4 +290,121 @@ async def get_ai_config(current_user: User = Depends(get_current_user)):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get AI configuration: {str(e)}",
+        )
+
+
+@router.post("/enhanced/generate/podcast")
+async def generate_enhanced_podcast(
+    request: EnhancedGenerationRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Generate a complete podcast using the Enhanced AI Pipeline with voice generation"""
+    try:
+        # Verify the podcast exists and belongs to the user
+        podcast_service = PodcastService(db)
+        podcast = podcast_service.get_podcast_by_id(request.podcast_id)
+
+        if not podcast:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Podcast not found"
+            )
+
+        if podcast.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+            )
+
+        # Update podcast status to generating
+        podcast_service.update_podcast_status(request.podcast_id, "generating")
+
+        # Initialize Enhanced Pipeline Orchestrator
+        enhanced_orchestrator = EnhancedPipelineOrchestrator(db)
+
+        # Extract user inputs from custom settings
+        custom_settings = request.custom_settings or {}
+
+        # Create user inputs for enhanced pipeline
+        user_inputs = {
+            "topic": podcast.topic,
+            "target_duration": podcast.length,
+            "generate_voice": custom_settings.get("generate_voice", False),
+            "hosts": custom_settings.get(
+                "hosts",
+                {
+                    "host_1": {
+                        "name": "Felix",
+                        "personality": "analytical, thoughtful, engaging",
+                        "role": "primary_questioner",
+                    },
+                    "host_2": {
+                        "name": "Bjorn",
+                        "personality": "warm, curious, conversational",
+                        "role": "storyteller",
+                    },
+                },
+            ),
+            "style_preferences": custom_settings.get(
+                "style_preferences",
+                {
+                    "tone": "conversational",
+                    "complexity": "accessible",
+                    "humor_level": "light",
+                    "pacing": "moderate",
+                },
+            ),
+            "content_preferences": custom_settings.get(
+                "content_preferences",
+                {
+                    "focus_areas": ["practical applications", "recent developments"],
+                    "target_audience": "general public",
+                },
+            ),
+        }
+
+        # Start enhanced generation
+        logger.info(
+            f"Starting enhanced podcast generation for podcast ID: {request.podcast_id}"
+        )
+
+        generation_result = await enhanced_orchestrator.generate_enhanced_podcast(
+            podcast_id=request.podcast_id,
+            user_inputs=user_inputs,
+            progress_callback=None,  # Could implement WebSocket progress updates later
+            quality_settings=custom_settings.get("quality_settings"),
+        )
+
+        return {
+            "success": generation_result["success"],
+            "generation_id": generation_result.get("generation_id"),
+            "message": "Enhanced podcast generation completed"
+            if generation_result["success"]
+            else f"Enhanced podcast generation failed: {generation_result.get('error', 'Unknown error')}",
+            "result": generation_result,
+            "voice_generated": generation_result.get("voice_data") is not None,
+            "total_duration": generation_result.get("voice_data", {}).get(
+                "total_duration"
+            )
+            if generation_result.get("voice_data")
+            else None,
+            "cost_estimate": generation_result.get("voice_data", {}).get("total_cost")
+            if generation_result.get("voice_data")
+            else None,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Enhanced podcast generation failed: {e}")
+
+        # Update podcast status to failed
+        try:
+            podcast_service.update_podcast_status(request.podcast_id, "failed")
+        except Exception as update_error:
+            logger.error(f"Failed to update podcast status: {update_error}")
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Enhanced podcast generation failed: {str(e)}",
         )
