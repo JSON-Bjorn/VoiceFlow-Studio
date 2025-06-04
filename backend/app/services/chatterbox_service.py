@@ -11,6 +11,7 @@ import os
 import io
 import hashlib
 import tempfile
+import time
 from typing import Optional, Dict, List, Any, BinaryIO
 from pathlib import Path
 from dataclasses import dataclass
@@ -61,11 +62,21 @@ class ChatterboxService:
     def __init__(self):
         """Initialize the Chatterbox service"""
         self.model: Optional[ChatterboxTTS] = None
+        # Prefer CUDA if available, fallback to CPU
+        if torch.cuda.is_available():
+            self.device = "cuda"
+            logger.info(
+                f"CUDA detected: {torch.cuda.get_device_name(0)} with {torch.cuda.get_device_properties(0).total_memory // 1024**3}GB VRAM"
+            )
+        else:
+            self.device = "cpu"
+            logger.info("CUDA not available, using CPU")
+
         self.sample_rate = 22050  # Default sample rate
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.voice_profiles = self._initialize_voice_profiles()
         self.audio_cache_dir = Path("storage/audio/cache")
         self.audio_cache_dir.mkdir(parents=True, exist_ok=True)
+        self._model_loaded = False
 
         logger.info(f"Chatterbox service initialized on device: {self.device}")
 
@@ -102,109 +113,130 @@ class ChatterboxService:
             ),
         }
 
-    async def initialize_model(self) -> bool:
-        """Initialize the Chatterbox TTS model"""
+    def _load_model(self):
+        """Load the Chatterbox TTS model with proper device mapping"""
+        if self._model_loaded and self.model is not None:
+            return self.model
+
         try:
-            if self.model is None:
-                logger.info("Loading Chatterbox TTS model...")
-                self.model = ChatterboxTTS.from_pretrained(device=self.device)
-                self.sample_rate = self.model.sr
-                logger.info(f"Chatterbox model loaded successfully on {self.device}")
-            return True
+            logger.info(f"Loading Chatterbox TTS model on {self.device}...")
+            start_time = time.time()
+
+            # Load model with proper device mapping
+            self.model = ChatterboxTTS.from_pretrained(device=self.device)
+
+            load_time = time.time() - start_time
+            self.sample_rate = self.model.sr
+            self._model_loaded = True
+
+            logger.info(
+                f"Chatterbox TTS model loaded successfully on {self.device} in {load_time:.2f} seconds"
+            )
+            logger.info(f"Model sample rate: {self.sample_rate}")
+
+            return self.model
+
         except Exception as e:
-            logger.error(f"Failed to initialize Chatterbox model: {e}")
-            return False
+            logger.error(f"Failed to load Chatterbox TTS model on {self.device}: {e}")
+
+            # If CUDA fails, try fallback to CPU
+            if self.device == "cuda":
+                logger.info("Attempting fallback to CPU...")
+                try:
+                    self.device = "cpu"
+                    self.model = ChatterboxTTS.from_pretrained(device=self.device)
+                    self.sample_rate = self.model.sr
+                    self._model_loaded = True
+                    logger.info(f"Successfully loaded model on CPU fallback")
+                    return self.model
+                except Exception as cpu_error:
+                    logger.error(f"CPU fallback also failed: {cpu_error}")
+
+            self._model_loaded = False
+            raise
 
     def is_available(self) -> bool:
         """Check if the Chatterbox service is available"""
-        return self.model is not None or torch.cuda.is_available()
+        try:
+            self._load_model()
+            return self._model_loaded
+        except Exception:
+            return False
 
     async def test_connection(self) -> Dict[str, Any]:
         """Test the Chatterbox TTS functionality"""
         try:
-            if not await self.initialize_model():
-                return {
-                    "status": "error",
-                    "message": "Failed to initialize Chatterbox model",
-                    "available": False,
-                }
-
-            # Generate a short test audio
-            test_text = "Hello, this is a test of Chatterbox TTS."
-            wav = self.model.generate(test_text)
+            model = self._load_model()
 
             return {
                 "status": "success",
                 "message": "Chatterbox TTS connection successful",
-                "available": True,
                 "device": self.device,
                 "sample_rate": self.sample_rate,
-                "test_audio_duration": len(wav) / self.sample_rate,
+                "model_loaded": self._model_loaded,
+                "cuda_available": torch.cuda.is_available(),
             }
+
         except Exception as e:
-            logger.error(f"Chatterbox TTS test failed: {e}")
             return {
                 "status": "error",
                 "message": f"Chatterbox TTS test failed: {str(e)}",
-                "available": False,
+                "device": self.device,
+                "model_loaded": False,
             }
 
     async def convert_text_to_speech(
         self,
         text: str,
-        voice_id: str = "alex",
+        voice_id: str = "default",
         audio_prompt_path: Optional[str] = None,
         speed: float = 1.0,
         stability: float = 0.5,
         similarity_boost: float = 0.8,
         style: float = 0.0,
     ) -> TTSResponse:
-        """
-        Convert text to speech using Chatterbox TTS
-
-        Args:
-            text: Text to convert to speech
-            voice_id: Voice profile ID to use
-            audio_prompt_path: Path to audio file for voice cloning
-            speed: Speech speed (not used in current Chatterbox version)
-            stability: Voice stability (not used in current Chatterbox version)
-            similarity_boost: Voice similarity boost (not used in current Chatterbox version)
-            style: Voice style (not used in current Chatterbox version)
-        """
+        """Convert text to speech using Chatterbox TTS"""
         try:
-            if not await self.initialize_model():
-                raise Exception("Chatterbox model not available")
+            model = self._load_model()
+
+            start_time = time.time()
 
             # Generate audio using Chatterbox
-            if audio_prompt_path and os.path.exists(audio_prompt_path):
-                wav = self.model.generate(text, audio_prompt_path=audio_prompt_path)
+            if audio_prompt_path:
+                wav = model.generate(text, audio_prompt_path=audio_prompt_path)
             else:
-                wav = self.model.generate(text)
+                wav = model.generate(text)
 
-            # Convert tensor to bytes
-            audio_bytes = self._tensor_to_bytes(wav)
-            duration = len(wav) / self.sample_rate
+            processing_time = time.time() - start_time
+
+            # Convert to bytes
+            with io.BytesIO() as buffer:
+                torchaudio.save(buffer, wav, model.sr, format="wav")
+                audio_data = buffer.getvalue()
+
+            duration = wav.shape[1] / model.sr
 
             return TTSResponse(
-                audio_data=audio_bytes,
+                success=True,
+                audio_data=audio_data,
                 audio_format="wav",
-                sample_rate=self.sample_rate,
+                sample_rate=model.sr,
                 duration=duration,
                 voice_id=voice_id,
                 text=text,
-                success=True,
+                processing_time=processing_time,
             )
 
         except Exception as e:
-            logger.error(f"TTS conversion failed: {e}")
+            logger.error(f"Text-to-speech conversion failed: {e}")
             return TTSResponse(
+                success=False,
                 audio_data=b"",
                 audio_format="wav",
-                sample_rate=self.sample_rate,
+                sample_rate=22050,
                 duration=0.0,
                 voice_id=voice_id,
                 text=text,
-                success=False,
                 error_message=str(e),
             )
 
@@ -364,7 +396,7 @@ class ChatterboxService:
 
         try:
             # Check if model can be initialized
-            model_available = await self.initialize_model()
+            model_available = await self._load_model()
 
             if model_available:
                 # Test generation

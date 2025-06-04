@@ -1,10 +1,10 @@
-# VoiceFlow Studio
+# VoiceFlow Studio 🎙️
 
-An AI-powered podcast generation platform that creates professional-quality podcasts from simple text prompts using a sophisticated 6-agent AI system.
+An AI-powered podcast generation platform that creates high-quality, engaging podcasts from simple prompts. Built with Next.js, FastAPI, and advanced AI pipeline powered by OpenAI and Chatterbox TTS.
 
 ## 🎯 Overview
 
-VoiceFlow Studio transforms any topic into engaging, professional-quality podcasts featuring natural conversations between AI hosts with distinct personalities. Users can generate podcasts in minutes using our advanced AI pipeline powered by OpenAI and ElevenLabs.
+VoiceFlow Studio transforms any topic into engaging, professional-quality podcasts featuring natural conversations between AI hosts with distinct personalities. Users can generate podcasts in minutes using our advanced AI pipeline powered by OpenAI and Chatterbox TTS.
 
 ## 🚀 Features
 
@@ -23,35 +23,26 @@ VoiceFlow Studio transforms any topic into engaging, professional-quality podcas
 - **Advanced AI Pipeline**: 6-agent system with sophisticated conversation generation
 - **Responsive Design**: Mobile-first UI with shadcn/ui components
 
-## 🛠 Tech Stack
+## 🛠️ Tech Stack
 
 ### Frontend
-- **Framework**: Next.js 14+ with App Router
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS
-- **Components**: shadcn/ui
-- **Icons**: Lucide React
-- **Authentication**: JWT tokens
-- **Forms**: React Hook Form with validation
-- **Payments**: Stripe Elements
+- **Next.js 14** - React framework with App Router
+- **TypeScript** - Type-safe development
+- **Tailwind CSS** - Utility-first styling
+- **shadcn/ui** - Modern UI components
 
 ### Backend
-- **Framework**: FastAPI (Python)
-- **Database**: SQLite (development) / PostgreSQL (production)
-- **Authentication**: JWT with bcrypt
-- **Payments**: Stripe API with webhooks
-- **AI Services**: OpenAI API, ElevenLabs API (in progress)
-- **File Storage**: AWS S3 (planned)
-- **Migration**: Alembic
+- **FastAPI** - Modern Python web framework
+- **PostgreSQL** - Reliable database with SQLAlchemy ORM
+- **Chatterbox TTS** - Open-source text-to-speech engine
+- **OpenAI API** - GPT models for content generation
+- **Stripe** - Payment processing
+- **Pydantic** - Data validation
 
-### Enhanced AI Pipeline (6-Agent System)
-- **Research Agent**: Comprehensive topic research and fact-gathering
-- **Script Agent**: Dialogue generation with distinct personalities
-- **Content Planning Agent**: Episode structure and content organization
-- **Conversation Flow Agent**: Natural dialogue flow and transitions
-- **Dialogue Distribution Agent**: Balanced speaker allocation and timing
-- **Personality Adaptation Agent**: Consistent character voice maintenance
-- **Enhanced Pipeline Orchestrator**: Coordinated multi-agent execution
+### AI Services
+- **OpenAI GPT-4** - Script generation and content creation
+- **Chatterbox TTS** - Voice synthesis and audio generation
+- **Custom Agents** - Specialized AI agents for different tasks
 
 ## 📁 Project Structure
 
@@ -131,42 +122,41 @@ npm run dev
 - **Backend API**: http://localhost:8000
 - **API Documentation**: http://localhost:8000/docs
 
-## ✅ Current Status
+## 📋 Current Status
 
-### Working Features
-- ✅ **Landing Page**: Professional UI with hero section and navigation
-- ✅ **User Authentication**: Complete registration and login system
-- ✅ **Protected Dashboard**: User profile display with credit balance
-- ✅ **User Profile Management**: Edit profile, change password, account settings
-- ✅ **Credit System**: Complete credit management with transaction history
-- ✅ **Stripe Integration**: Secure payment processing with webhooks
-- ✅ **Credit Purchases**: Multiple credit bundles with secure checkout
-- ✅ **Podcast Library**: CRUD operations with search and filtering
-- ✅ **Database Integration**: SQLite with Alembic migrations
-- ✅ **API Integration**: Full frontend-backend communication
-- ✅ **Error Handling**: Comprehensive error messages and loading states
-- ✅ **Enhanced 6-Agent AI Pipeline**: Complete multi-agent system for podcast generation
-  - Research Agent for comprehensive topic research
-  - Script Agent for dialogue generation
-  - Content Planning Agent for episode structure
-  - Conversation Flow Agent for natural dialogue flow
-  - Dialogue Distribution Agent for balanced speaker allocation
-  - Personality Adaptation Agent for consistent character voices
-  - Enhanced Pipeline Orchestrator for coordinated execution
-- ✅ **Advanced State Management**: Memory systems and conversation context
-- ✅ **Sophisticated Dialogue Generation**: Multi-personality conversation system
+### ✅ Completed Features
 
-### In Development
-- 🔄 **ElevenLabs TTS Integration**: Text-to-speech voice generation
-- 🔄 **Voice Profile Management**: Distinct host voice profiles
+#### Phase 1-2: Foundation & UI
+- ✅ Next.js project setup with TypeScript
+- ✅ FastAPI backend with PostgreSQL
+- ✅ User authentication system
+- ✅ Modern dashboard interface
+- ✅ Credit management system
 
-### Not Yet Implemented
-- ❌ **Audio File Generation**: ElevenLabs TTS integration
-- ❌ **Audio Assembly**: Intro/outro music and effects
-- ❌ **Podcast Generation UI**: Frontend interface for AI pipeline
-- ❌ **File Storage**: AWS S3 integration
-- ❌ **Real-time Progress**: Generation status tracking
-- ❌ **Download System**: Audio file delivery
+#### Phase 3: Payment Integration
+- ✅ Stripe integration for credit purchases
+- ✅ Secure payment processing
+- ✅ Credit bundle system
+
+#### Phase 5: AI Pipeline
+- ✅ OpenAI API integration
+- ✅ Enhanced 6-agent architecture
+- ✅ Content generation pipeline
+- ✅ Research and script agents
+
+#### Phase 6: Voice & Audio (CHATTERBOX MIGRATION COMPLETE)
+- ✅ **Chatterbox TTS Integration**: Open-source text-to-speech
+- ✅ **Voice Profile System**: Distinct host personalities 
+- ✅ **Local Audio Generation**: No API costs, runs on your hardware
+- ✅ **Voice Cloning Support**: Custom voice prompts
+- ✅ **Audio Processing Pipeline**: Complete podcast assembly
+
+#### Phase 7: Generation Interface
+- ✅ Podcast generation form
+- 🔄 **Current**: Generation progress tracking
+
+### 🔄 In Progress
+- **Audio File Generation**: Chatterbox TTS integration (migrated from ElevenLabs)
 
 ## 🔧 Development Setup
 
@@ -223,7 +213,6 @@ SECRET_KEY=your-secret-key-change-this-in-production
 
 # External APIs
 OPENAI_API_KEY=your-openai-api-key-here
-ELEVENLABS_API_KEY=your-elevenlabs-api-key-here
 
 # Stripe
 STRIPE_SECRET_KEY=your-stripe-secret-key-here
@@ -287,7 +276,7 @@ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=your-stripe-publishable-key-here
 See `tasks.txt` for detailed development progress and upcoming features.
 
 **Current Phase**: Voice & Audio Processing (Phase 6)
-**Current Task**: ElevenLabs API Integration for TTS
+**Current Task**: Implementing Chatterbox TTS for cost-effective, high-quality voice generation
 **Next Phase**: Podcast Generation Interface (Phase 7)
 
 ## 🎯 AI Pipeline Architecture

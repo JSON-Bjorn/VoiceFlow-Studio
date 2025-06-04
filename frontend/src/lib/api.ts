@@ -121,7 +121,7 @@ class ApiClient {
         }
     }
 
-    private async request<T>(
+    async request<T>(
         endpoint: string,
         options: RequestInit = {}
     ): Promise<T> {
@@ -394,48 +394,129 @@ class ApiClient {
         });
     }
 
-    // Voice generation APIs
+    // Voice generation APIs (Updated for Chatterbox)
     async getVoiceProfiles(): Promise<{
-        success: boolean;
         voices: Array<{
             voice_id: string;
             name: string;
             description: string;
-            category: string;
+            gender: string;
+            style: string;
+            is_custom: boolean;
         }>;
     }> {
         return this.request<{
-            success: boolean;
             voices: Array<{
                 voice_id: string;
                 name: string;
                 description: string;
-                category: string;
+                gender: string;
+                style: string;
+                is_custom: boolean;
             }>;
-        }>(`/api/elevenlabs/voices`);
+        }>(`/api/chatterbox/voices`);
     }
 
     async estimateVoiceCost(text: string): Promise<{
-        success: boolean;
-        cost_estimate: {
-            character_count: number;
-            estimated_cost_usd: number;
-            cost_per_1k_chars: number;
-            currency: string;
-        };
+        character_count: number;
+        estimated_processing_time: number;
+        computational_cost: string;
+        api_cost: number;
+        total_cost: number;
     }> {
         return this.request<{
-            success: boolean;
-            cost_estimate: {
-                character_count: number;
-                estimated_cost_usd: number;
-                cost_per_1k_chars: number;
-                currency: string;
-            };
-        }>(`/api/elevenlabs/estimate-cost`, {
+            character_count: number;
+            estimated_processing_time: number;
+            computational_cost: string;
+            api_cost: number;
+            total_cost: number;
+        }>(`/api/chatterbox/estimate-cost`, {
             method: 'POST',
             body: JSON.stringify({ text }),
         });
+    }
+
+    // Additional Chatterbox methods
+    async testChatterboxConnection(): Promise<{
+        status: string;
+        message: string;
+        details: any;
+    }> {
+        return this.request(`/api/chatterbox/test`);
+    }
+
+    async getChatterboxHealth(): Promise<{
+        status: string;
+        service: string;
+        details: any;
+    }> {
+        return this.request(`/api/chatterbox/health`);
+    }
+
+    async getPodcastVoiceProfiles(): Promise<{
+        voices: Record<string, {
+            id: string;
+            name: string;
+            role: string;
+            personality: string;
+            voice_settings: any;
+        }>;
+    }> {
+        return this.request(`/api/chatterbox/podcast-voices`);
+    }
+
+    async generateTTSAudio(data: {
+        text: string;
+        voice_id?: string;
+        audio_prompt_path?: string;
+        speed?: number;
+        stability?: number;
+        similarity_boost?: number;
+        style?: number;
+    }): Promise<{
+        success: boolean;
+        audio_url?: string;
+        duration: number;
+        voice_id: string;
+        processing_time?: number;
+        cost_estimate?: any;
+        error_message?: string;
+    }> {
+        return this.request(`/api/chatterbox/generate`, {
+            method: 'POST',
+            body: JSON.stringify(data),
+        });
+    }
+
+    async generatePodcastSegmentAudio(data: {
+        text: string;
+        speaker_id: string;
+        segment_type?: string;
+        voice_settings?: any;
+    }): Promise<{
+        success: boolean;
+        audio_url?: string;
+        duration: number;
+        voice_id: string;
+        processing_time?: number;
+        cost_estimate?: any;
+        error_message?: string;
+    }> {
+        return this.request(`/api/chatterbox/podcast-segment`, {
+            method: 'POST',
+            body: JSON.stringify(data),
+        });
+    }
+
+    async getChatterboxConfig(): Promise<{
+        service: string;
+        available: boolean;
+        device: string;
+        sample_rate: number;
+        voice_profiles: any;
+        health: any;
+    }> {
+        return this.request(`/api/chatterbox/config`);
     }
 
     // Stripe payment endpoints
@@ -462,4 +543,44 @@ class ApiClient {
 // Import types for Stripe
 import type { CreditBundle, PaymentIntentResponse, PaymentStatus } from './stripe'
 
-export const api = new ApiClient() 
+export const api = new ApiClient()
+
+// Replace ElevenLabs voices endpoint with Chatterbox
+export const getAvailableVoices = () =>
+    api.getVoiceProfiles();
+
+// Replace ElevenLabs cost estimation with Chatterbox
+export const estimateAudioCost = (text: string) =>
+    api.estimateVoiceCost(text);
+
+// New Chatterbox endpoints
+export const testChatterboxConnection = () =>
+    api.testChatterboxConnection();
+
+export const getChatterboxHealth = () =>
+    api.getChatterboxHealth();
+
+export const getPodcastVoices = () =>
+    api.getPodcastVoiceProfiles();
+
+export const generateTTS = (data: {
+    text: string;
+    voice_id?: string;
+    audio_prompt_path?: string;
+    speed?: number;
+    stability?: number;
+    similarity_boost?: number;
+    style?: number;
+}) =>
+    api.generateTTSAudio(data);
+
+export const generatePodcastSegment = (data: {
+    text: string;
+    speaker_id: string;
+    segment_type?: string;
+    voice_settings?: any;
+}) =>
+    api.generatePodcastSegmentAudio(data);
+
+export const getChatterboxConfig = () =>
+    api.getChatterboxConfig(); 
