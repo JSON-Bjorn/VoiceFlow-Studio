@@ -1,0 +1,35 @@
+{
+  "test_info": {
+    "timestamp": "2025-06-04 08:35:02",
+    "migration_status": "ElevenLabs -> Chatterbox TTS",
+    "test_type": "Mock integration test",
+    "expected_features": [
+      "Local TTS processing",
+      "Voice cloning support",
+      "Custom voice prompts",
+      "Zero API costs",
+      "GPU acceleration support",
+      "Multiple speaker profiles"
+    ]
+  },
+  "voice_profiles": {
+    "host1": {
+      "name": "Alex Chen",
+      "voice_id": "alex",
+      "style": "professional",
+      "role": "Tech Host"
+    },
+    "host2": {
+      "name": "Sarah Williams",
+      "voice_id": "sarah",
+      "style": "conversational",
+      "role": "Co-Host"
+    }
+  },
+  "expected_quality": {
+    "sample_rate": 44100,
+    "bit_depth": 16,
+    "channels": 1,
+    "format": "WAV"
+  }
+}
