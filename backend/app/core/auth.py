@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
@@ -7,6 +7,9 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db
+
+if TYPE_CHECKING:
+    from ..models.user import User
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -50,6 +53,51 @@ def verify_token(token: str) -> Optional[dict]:
         )
         return payload
     except JWTError:
+        return None
+
+
+async def get_current_user_from_token(
+    token: str, db: Session = None
+) -> Optional["User"]:
+    """
+    Get user from JWT token (for WebSocket connections)
+
+    Args:
+        token: JWT token string
+        db: Optional database session (will create new one if not provided)
+
+    Returns:
+        User object if token is valid, None otherwise
+    """
+    from ..models.user import User  # Import here to avoid circular imports
+
+    try:
+        payload = verify_token(token)
+        if payload is None:
+            return None
+
+        user_id: int = payload.get("sub")
+        if user_id is None:
+            return None
+
+        # Get database session if not provided
+        if db is None:
+            db_gen = get_db()
+            db = next(db_gen)
+            try:
+                user = db.query(User).filter(User.id == user_id).first()
+                return user
+            finally:
+                # Close the database session
+                try:
+                    next(db_gen)
+                except StopIteration:
+                    pass
+        else:
+            user = db.query(User).filter(User.id == user_id).first()
+            return user
+
+    except (JWTError, ValueError, Exception):
         return None
 
 

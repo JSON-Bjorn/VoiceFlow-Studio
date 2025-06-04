@@ -1,52 +1,53 @@
 from typing import Dict, List, Optional, Any, Callable
-from .research_agent import ResearchAgent
-from .content_planning_agent import ContentPlanningAgent
-from .openai_service import OpenAIService
-from .voice_agent import voice_agent
-from .audio_agent import audio_agent
-from ..models.podcast import Podcast
-from ..services.podcast_service import PodcastService
-from sqlalchemy.orm import Session
+from datetime import datetime
 import logging
 import asyncio
-from datetime import datetime
-import json
+from .websocket_manager import websocket_manager
+from ..models.podcast import Podcast
+from ..services.podcast_service import PodcastService
+from .research_agent import ResearchAgent
+from .script_agent import ScriptAgent
+from .content_planning_agent import ContentPlanningAgent
+from .conversation_flow_agent import ConversationFlowAgent
+from .dialogue_distribution_agent import DialogueDistributionAgent
+from .personality_adaptation_agent import PersonalityAdaptationAgent
+from .voice_agent import VoiceAgent
+from .audio_agent import AudioAgent
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
 
 class EnhancedPipelineOrchestrator:
     """
-    Enhanced Pipeline Orchestrator with Iterative Refinement and Feedback Loops
-
-    Improvements over linear flow:
-    1. Feedback loops between agents
-    2. Iterative refinement capabilities
-    3. Dynamic content adaptation
-    4. Enhanced user input handling
-    5. Quality-driven regeneration
-    6. Parallel processing where possible
-    7. Voice generation integration with ElevenLabs
+    Enhanced Pipeline Orchestrator with 6-agent system and quality assurance
     """
 
     def __init__(self, db: Session):
         self.db = db
+        self.podcast_service = PodcastService(db)
+
+        # Initialize all agents
         self.research_agent = ResearchAgent()
         self.content_planning_agent = ContentPlanningAgent()
-        self.openai_service = OpenAIService()
-        self.podcast_service = PodcastService(db)
-        self.voice_agent = voice_agent
-        self.audio_agent = audio_agent
+        self.conversation_flow_agent = ConversationFlowAgent()
+        self.script_agent = ScriptAgent()
+        self.dialogue_distribution_agent = DialogueDistributionAgent()
+        self.personality_adaptation_agent = PersonalityAdaptationAgent()
+        self.voice_agent = VoiceAgent()
+        self.audio_agent = AudioAgent()
 
-        # Enhanced state tracking
+        # Quality thresholds
+        self.quality_thresholds = {
+            "minimum_coherence_score": 0.75,
+            "minimum_engagement_score": 0.70,
+            "maximum_iterations": 3,
+            "target_script_length_variance": 0.15,  # 15% variance allowed
+        }
+
+        # Generation state tracking
         self.current_generation = None
         self.generation_history = []
-        self.quality_thresholds = {
-            "research_quality": 75,
-            "content_plan_quality": 80,
-            "script_quality": 85,
-            "overall_coherence": 80,
-        }
 
     async def generate_enhanced_podcast(
         self,
@@ -97,51 +98,87 @@ class EnhancedPipelineOrchestrator:
         """
         logger.info(f"Starting enhanced podcast generation for ID: {podcast_id}")
 
+        # Get podcast and user info for WebSocket updates
+        podcast = self.podcast_service.get_podcast_by_id(podcast_id)
+        if not podcast:
+            raise ValueError(f"Podcast with ID {podcast_id} not found")
+
         # Initialize enhanced generation state
         generation_state = self._initialize_enhanced_state(
             podcast_id, user_inputs, quality_settings
         )
         self.current_generation = generation_state
 
+        # Helper function to send progress updates via WebSocket
+        async def send_progress(
+            phase: str, progress: int, message: str, metadata: Optional[Dict] = None
+        ):
+            await websocket_manager.send_progress_update(
+                user_id=podcast.user_id,
+                generation_id=generation_state["id"],
+                phase=phase,
+                progress=progress,
+                message=message,
+                metadata=metadata,
+            )
+            # Also call the optional callback
+            if progress_callback:
+                await progress_callback(phase, progress, message)
+
         try:
             # Phase 1: Enhanced Research with User Context
-            await self._update_progress(
-                progress_callback, "Conducting contextual research", 10
-            )
+            await send_progress("research", 10, "Conducting contextual research")
             research_result = await self._enhanced_research_phase(
                 user_inputs, generation_state
             )
 
             if not research_result["success"]:
+                await websocket_manager.send_error_notification(
+                    user_id=podcast.user_id,
+                    generation_id=generation_state["id"],
+                    error_message="Research phase failed",
+                    error_details=research_result,
+                )
                 return await self._handle_phase_failure(
                     "research", research_result, generation_state
                 )
 
             # Phase 2: Strategic Content Planning
-            await self._update_progress(
-                progress_callback, "Creating strategic content plan", 25
-            )
+            await send_progress("planning", 25, "Creating strategic content plan")
             planning_result = await self._content_planning_phase(
                 research_result["data"], user_inputs, generation_state
             )
 
             if not planning_result["success"]:
+                await websocket_manager.send_error_notification(
+                    user_id=podcast.user_id,
+                    generation_id=generation_state["id"],
+                    error_message="Content planning failed",
+                    error_details=planning_result,
+                )
                 return await self._handle_phase_failure(
                     "planning", planning_result, generation_state
                 )
 
             # Phase 3: Iterative Script Generation with Feedback
-            await self._update_progress(
-                progress_callback, "Generating and refining script", 50
+            await send_progress(
+                "script_generation", 50, "Generating and refining script"
             )
             script_result = await self._iterative_script_generation(
                 research_result["data"],
                 planning_result["data"],
                 user_inputs,
                 generation_state,
+                progress_update_callback=send_progress,
             )
 
             if not script_result["success"]:
+                await websocket_manager.send_error_notification(
+                    user_id=podcast.user_id,
+                    generation_id=generation_state["id"],
+                    error_message="Script generation failed",
+                    error_details=script_result,
+                )
                 return await self._handle_phase_failure(
                     "script", script_result, generation_state
                 )
@@ -152,11 +189,9 @@ class EnhancedPipelineOrchestrator:
                 user_inputs.get("generate_voice", False)
                 and self.voice_agent.is_available()
             ):
-                await self._update_progress(
-                    progress_callback, "Generating voice audio", 65
-                )
+                await send_progress("voice_generation", 65, "Generating voice audio")
                 voice_result = await self._voice_generation_phase(
-                    script_result["data"], user_inputs, generation_state
+                    script_result["data"], user_inputs, generation_state, send_progress
                 )
 
                 if voice_result and not voice_result["success"]:
@@ -175,8 +210,8 @@ class EnhancedPipelineOrchestrator:
                     "assemble_audio", True
                 )  # Default to True if voice was generated
             ):
-                await self._update_progress(
-                    progress_callback, "Assembling final audio episode", 75
+                await send_progress(
+                    "audio_assembly", 75, "Assembling final audio episode"
                 )
                 audio_result = await self._audio_assembly_phase(
                     voice_result, user_inputs, generation_state
@@ -189,9 +224,7 @@ class EnhancedPipelineOrchestrator:
                     # Continue without assembled audio - voice segments are still available
 
             # Phase 6: Final Quality Validation and Optimization
-            await self._update_progress(
-                progress_callback, "Final quality validation", 85
-            )
+            await send_progress("validation", 85, "Final quality validation")
             validation_result = await self._comprehensive_validation(
                 research_result["data"],
                 planning_result["data"],
@@ -200,9 +233,7 @@ class EnhancedPipelineOrchestrator:
             )
 
             # Phase 7: Save and Complete
-            await self._update_progress(
-                progress_callback, "Saving optimized content", 95
-            )
+            await send_progress("saving", 95, "Saving optimized content")
             save_result = await self._save_enhanced_results(
                 podcast_id,
                 research_result["data"],
@@ -214,7 +245,7 @@ class EnhancedPipelineOrchestrator:
                 generation_state,
             )
 
-            await self._update_progress(progress_callback, "Generation completed", 100)
+            await send_progress("completed", 100, "Generation completed successfully")
 
             final_result = {
                 "success": True,
@@ -240,6 +271,14 @@ class EnhancedPipelineOrchestrator:
                 "completed_at": datetime.utcnow().isoformat(),
             }
 
+            # Send completion notification via WebSocket
+            await websocket_manager.send_generation_complete(
+                user_id=podcast.user_id,
+                generation_id=generation_state["id"],
+                success=True,
+                result=final_result,
+            )
+
             self.generation_history.append(final_result)
             self.current_generation = None
 
@@ -250,6 +289,15 @@ class EnhancedPipelineOrchestrator:
             logger.error(
                 f"Enhanced podcast generation failed for ID {podcast_id}: {str(e)}"
             )
+
+            # Send error notification via WebSocket
+            await websocket_manager.send_error_notification(
+                user_id=podcast.user_id,
+                generation_id=generation_state["id"],
+                error_message=str(e),
+                error_details={"generation_state": generation_state},
+            )
+
             return await self._handle_generation_failure(
                 podcast_id, str(e), generation_state
             )
@@ -465,243 +513,73 @@ class EnhancedPipelineOrchestrator:
         content_plan: Dict[str, Any],
         user_inputs: Dict[str, Any],
         generation_state: Dict[str, Any],
+        progress_update_callback: Optional[Callable] = None,
     ) -> Dict[str, Any]:
-        """Iterative script generation with multiple refinement passes"""
+        """Enhanced script generation with progress updates"""
+        try:
+            max_iterations = generation_state["quality_thresholds"].get(
+                "maximum_iterations", 3
+            )
 
-        max_iterations = 3
-        current_iteration = 0
-        best_script = None
-        best_score = 0
-
-        while current_iteration < max_iterations:
-            try:
-                # Generate script with user host preferences
-                script_data = await self._generate_script_with_hosts(
-                    research_data, content_plan, user_inputs, generation_state
-                )
-
-                if not script_data:
-                    current_iteration += 1
-                    continue
-
-                # Validate script quality
-                validation = await self._validate_script_quality(
-                    script_data, user_inputs
-                )
-                quality_score = validation.get("quality_score", 0)
-
-                # Track best result
-                if quality_score > best_score:
-                    best_script = script_data
-                    best_score = quality_score
-
-                # Check if quality threshold is met
-                threshold = generation_state["quality_thresholds"]["script_quality"]
-                if quality_score >= threshold:
-                    generation_state["quality_scores"]["script"] = quality_score
-                    generation_state["iterations"]["script"] = current_iteration + 1
-                    generation_state["phases_completed"].append("iterative_script")
-                    return {
-                        "success": True,
-                        "data": script_data,
-                        "validation": validation,
-                    }
-
-                # Generate feedback for refinement
-                if current_iteration < max_iterations - 1:
-                    feedback = self._generate_script_feedback(validation, user_inputs)
-                    script_data = await self._refine_script_with_feedback(
-                        script_data, feedback
+            for iteration in range(max_iterations):
+                if progress_update_callback:
+                    progress = 50 + (
+                        iteration * 10
+                    )  # 50-80% range for script generation
+                    await progress_update_callback(
+                        "script_generation",
+                        progress,
+                        f"Script generation iteration {iteration + 1}/{max_iterations}",
                     )
 
-                current_iteration += 1
-                generation_state["iterations"]["script"] = current_iteration
-                generation_state["iterations"]["total_refinements"] += 1
+                # Generate script
+                script_result = await self.script_agent.generate_enhanced_script(
+                    research_data=research_data,
+                    content_plan=content_plan,
+                    user_inputs=user_inputs,
+                    iteration=iteration,
+                    feedback_from_previous=generation_state.get("script_feedback"),
+                )
 
-            except Exception as e:
-                logger.error(f"Script iteration {current_iteration} failed: {e}")
-                current_iteration += 1
+                if not script_result["success"]:
+                    continue
 
-        # Use best result if no iteration met threshold
-        if best_script:
-            generation_state["quality_scores"]["script"] = best_score
-            generation_state["iterations"]["script"] = max_iterations
-            generation_state["warnings"].append(
-                f"Script quality ({best_score}) below threshold, using best attempt"
-            )
+                # Quality validation
+                quality_scores = await self._validate_script_quality(
+                    script_result["data"], user_inputs, generation_state
+                )
+
+                # Check if quality meets threshold
+                if quality_scores["overall_score"] >= generation_state[
+                    "quality_thresholds"
+                ].get("minimum_coherence_score", 0.75):
+                    return {
+                        "success": True,
+                        "data": script_result["data"],
+                        "quality_scores": quality_scores,
+                        "iterations_used": iteration + 1,
+                    }
+
+                # Store feedback for next iteration
+                generation_state["script_feedback"] = quality_scores.get("feedback", {})
+
+            # If we reach here, max iterations exceeded
             return {
-                "success": True,
-                "data": best_script,
-                "validation": {"quality_score": best_score},
+                "success": False,
+                "error": f"Script generation did not meet quality standards after {max_iterations} iterations",
+                "last_attempt": script_result if "script_result" in locals() else None,
             }
 
-        return {
-            "success": False,
-            "error": "Failed to generate acceptable script after all iterations",
-        }
-
-    async def _generate_script_with_hosts(
-        self,
-        research_data: Dict[str, Any],
-        content_plan: Dict[str, Any],
-        user_inputs: Dict[str, Any],
-        generation_state: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
-        """Generate script with user-defined host personalities and preferences"""
-
-        # Extract host information
-        hosts_info = user_inputs.get("hosts", {})
-        style_prefs = user_inputs.get("style_preferences", {})
-        target_duration = user_inputs.get("target_duration", 10)
-
-        # Build host personalities from user input
-        host_personalities = {}
-        for host_key, host_data in hosts_info.items():
-            host_personalities[host_key] = {
-                "name": host_data.get("name", f"Host {host_key[-1]}"),
-                "personality": host_data.get("personality", "friendly and engaging"),
-                "role": host_data.get("role", "co-host"),
-                "voice_id": host_data.get("voice_id"),
-                "speaking_style": f"Speaks in a {host_data.get('personality', 'friendly')} manner",
-            }
-
-        # Use existing script agent with enhanced inputs
-        # This would need to be enhanced to use content_plan as well
-        from .script_agent import ScriptAgent
-
-        script_agent = ScriptAgent()
-
-        return script_agent.generate_script(
-            research_data=research_data,
-            target_length=target_duration,
-            host_personalities=host_personalities,
-            style_preferences=style_prefs,
-        )
-
-    async def _validate_script_quality(
-        self, script_data: Dict[str, Any], user_inputs: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Enhanced script validation with user preference alignment"""
-
-        from .script_agent import ScriptAgent
-
-        script_agent = ScriptAgent()
-
-        # Basic validation
-        validation = script_agent.validate_script(script_data)
-
-        # Enhanced validation with user preferences
-        hosts_info = user_inputs.get("hosts", {})
-        target_duration = user_inputs.get("target_duration", 10)
-
-        # Check host balance
-        if len(hosts_info) == 2:
-            dialogue_balance = script_data.get("script_metadata", {}).get(
-                "dialogue_balance", {}
-            )
-            host_names = [host["name"] for host in hosts_info.values()]
-
-            if len(host_names) == 2 and all(
-                name in dialogue_balance for name in host_names
-            ):
-                words_1 = dialogue_balance[host_names[0]].get("words", 0)
-                words_2 = dialogue_balance[host_names[1]].get("words", 0)
-
-                if words_1 > 0 and words_2 > 0:
-                    balance_ratio = min(words_1, words_2) / max(words_1, words_2)
-                    validation["host_balance_score"] = balance_ratio * 100
-                else:
-                    validation["host_balance_score"] = 0
-            else:
-                validation["host_balance_score"] = 0
-
-        # Check duration alignment
-        estimated_duration = script_data.get("estimated_duration", 0)
-        duration_accuracy = 100 - abs(estimated_duration - target_duration) * 10
-        validation["duration_accuracy"] = max(0, duration_accuracy)
-
-        # Recalculate overall quality score
-        base_score = validation.get("quality_score", 0)
-        host_balance = validation.get("host_balance_score", 0)
-        duration_score = validation.get("duration_accuracy", 0)
-
-        validation["quality_score"] = (
-            base_score * 0.6 + host_balance * 0.2 + duration_score * 0.2
-        )
-
-        return validation
-
-    def _generate_research_feedback(
-        self, validation: Dict[str, Any], content_prefs: Dict[str, Any]
-    ) -> str:
-        """Generate feedback for research improvement"""
-
-        issues = validation.get("issues", [])
-        quality_score = validation.get("quality_score", 0)
-
-        feedback_parts = []
-
-        if quality_score < 70:
-            feedback_parts.append("Increase depth and detail of research")
-
-        if "Too few subtopics" in str(issues):
-            feedback_parts.append("Add more diverse subtopics")
-
-        focus_areas = content_prefs.get("focus_areas", [])
-        if focus_areas:
-            feedback_parts.append(f"Ensure stronger focus on: {', '.join(focus_areas)}")
-
-        return (
-            "; ".join(feedback_parts)
-            if feedback_parts
-            else "Improve overall research quality and depth"
-        )
-
-    def _generate_script_feedback(
-        self, validation: Dict[str, Any], user_inputs: Dict[str, Any]
-    ) -> str:
-        """Generate feedback for script improvement"""
-
-        feedback_parts = []
-
-        quality_score = validation.get("quality_score", 0)
-        if quality_score < 80:
-            feedback_parts.append("Improve overall dialogue quality and naturalness")
-
-        host_balance = validation.get("host_balance_score", 0)
-        if host_balance < 70:
-            feedback_parts.append("Better balance dialogue between hosts")
-
-        duration_accuracy = validation.get("duration_accuracy", 0)
-        if duration_accuracy < 80:
-            feedback_parts.append("Adjust content to better match target duration")
-
-        style_prefs = user_inputs.get("style_preferences", {})
-        tone = style_prefs.get("tone", "conversational")
-        feedback_parts.append(f"Ensure dialogue maintains {tone} tone throughout")
-
-        return (
-            "; ".join(feedback_parts)
-            if feedback_parts
-            else "Enhance dialogue naturalness and flow"
-        )
-
-    async def _refine_script_with_feedback(
-        self, script_data: Dict[str, Any], feedback: str
-    ) -> Optional[Dict[str, Any]]:
-        """Refine script based on feedback"""
-
-        from .script_agent import ScriptAgent
-
-        script_agent = ScriptAgent()
-
-        return script_agent.refine_script(script_data, feedback)
+        except Exception as e:
+            logger.error(f"Error in iterative script generation: {e}")
+            return {"success": False, "error": str(e)}
 
     async def _voice_generation_phase(
         self,
         script_data: Dict[str, Any],
         user_inputs: Dict[str, Any],
         generation_state: Dict[str, Any],
+        progress_update_callback: Optional[Callable] = None,
     ) -> Dict[str, Any]:
         """
         Generate voice audio for script segments using ElevenLabs TTS
