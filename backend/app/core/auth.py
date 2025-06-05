@@ -76,9 +76,12 @@ async def get_current_user_from_token(
         if payload is None:
             return None
 
-        user_id: int = payload.get("sub")
-        if user_id is None:
+        user_id_str: str = payload.get("sub")
+        if user_id_str is None:
             return None
+
+        # Convert user ID from string to int
+        user_id = int(user_id_str)
 
         # Get database session if not provided
         if db is None:
@@ -97,7 +100,7 @@ async def get_current_user_from_token(
             user = db.query(User).filter(User.id == user_id).first()
             return user
 
-    except (JWTError, ValueError, Exception):
+    except (JWTError, ValueError, TypeError, Exception):
         return None
 
 
@@ -122,11 +125,14 @@ def get_current_user(
         if payload is None:
             raise credentials_exception
 
-        user_id: int = payload.get("sub")
-        if user_id is None:
+        user_id_str: str = payload.get("sub")
+        if user_id_str is None:
             raise credentials_exception
 
-    except (JWTError, ValueError):
+        # Convert user ID from string to int
+        user_id = int(user_id_str)
+
+    except (JWTError, ValueError, TypeError):
         raise credentials_exception
 
     # Get user from database

@@ -396,7 +396,7 @@ class ChatterboxService:
 
         try:
             # Check if model can be initialized
-            model_available = await self._load_model()
+            model_available = self._load_model()
 
             if model_available:
                 # Test generation

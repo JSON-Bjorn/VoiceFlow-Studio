@@ -23,6 +23,19 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expiration_hours: int = 24
 
+    # Auth compatibility properties
+    @property
+    def secret_key(self) -> str:
+        return self.jwt_secret_key
+
+    @property
+    def algorithm(self) -> str:
+        return self.jwt_algorithm
+
+    @property
+    def access_token_expire_minutes(self) -> int:
+        return self.jwt_expiration_hours * 60
+
     # Database Configuration
     database_url: str = "sqlite:///./voiceflow_studio.db"
 
