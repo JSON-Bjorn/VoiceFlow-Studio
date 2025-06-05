@@ -23,6 +23,18 @@ coverage/
 .coverage
 *.log
 
+# Test scripts and response files
+test_*.py
+test_*.js
+test_*.json
+*_test.py
+*_test.js
+response_*.json
+token_*.json
+test-response*.json
+*-frontend-tests.log
+all-*-tests.log
+
 # Node modules and build artifacts
 node_modules/
 .next/
