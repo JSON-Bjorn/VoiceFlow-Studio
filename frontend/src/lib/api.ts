@@ -70,6 +70,11 @@ export interface Podcast {
     status: 'pending' | 'generating' | 'completed' | 'failed'
     audio_url?: string
     script?: string
+    has_audio?: boolean
+    audio_segments_count?: number
+    audio_total_duration?: number
+    voice_generation_cost?: string
+    audio_file_paths?: string[]
     created_at: string
     updated_at?: string
 }

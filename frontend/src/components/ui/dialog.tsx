@@ -21,6 +21,17 @@ interface DialogTitleProps {
     children: ReactNode;
 }
 
+interface DialogDescriptionProps {
+    className?: string;
+    children: ReactNode;
+}
+
+interface DialogTriggerProps {
+    asChild?: boolean;
+    children: ReactNode;
+    onClick?: () => void;
+}
+
 export function Dialog({ open, onOpenChange, children }: DialogProps) {
     if (!open) return null;
 
@@ -38,6 +49,19 @@ export function Dialog({ open, onOpenChange, children }: DialogProps) {
             {children}
         </div>,
         document.body
+    );
+}
+
+export function DialogTrigger({ asChild, children, onClick }: DialogTriggerProps) {
+    if (asChild && React.isValidElement(children)) {
+        // For asChild, we expect the parent to handle the onClick
+        return children;
+    }
+
+    return (
+        <button onClick={onClick}>
+            {children}
+        </button>
     );
 }
 
@@ -62,5 +86,13 @@ export function DialogTitle({ className = '', children }: DialogTitleProps) {
         <h2 className={`text-lg font-semibold text-gray-900 ${className}`}>
             {children}
         </h2>
+    );
+}
+
+export function DialogDescription({ className = '', children }: DialogDescriptionProps) {
+    return (
+        <p className={`text-sm text-gray-600 ${className}`}>
+            {children}
+        </p>
     );
 } 

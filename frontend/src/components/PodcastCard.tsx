@@ -4,6 +4,7 @@ import { Podcast } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { PodcastDownloadShare } from './PodcastDownloadShare';
 import {
     Play,
     Download,
@@ -84,6 +85,7 @@ export default function PodcastCard({
                             {podcast.topic}
                         </p>
                     </div>
+
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -111,7 +113,7 @@ export default function PodcastCard({
                 </div>
             </CardHeader>
 
-            <CardContent className="pt-0">
+            <CardContent>
                 <div className="flex items-center justify-between mb-4">
                     <Badge className={getStatusColor(podcast.status)}>
                         {isGenerating && podcast.status === 'generating' && (
@@ -132,48 +134,46 @@ export default function PodcastCard({
                     </div>
                 </div>
 
-                <div className="flex gap-2">
-                    {canPlay && onPlay && (
-                        <Button
-                            onClick={() => onPlay(podcast)}
-                            size="sm"
-                            className="flex-1"
-                        >
-                            <Play className="mr-2 h-4 w-4" />
-                            Play
-                        </Button>
-                    )}
-
-                    {canGenerate && onGenerate && (
-                        <Button
-                            onClick={() => onGenerate(podcast)}
-                            size="sm"
-                            variant="outline"
-                            className="flex-1"
-                            disabled={isGenerating}
-                        >
-                            {isGenerating ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
+                <div className="flex items-center justify-between gap-2">
+                    {/* Play/Generate Button */}
+                    <div className="flex-1">
+                        {canPlay && onPlay && (
+                            <Button
+                                onClick={() => onPlay(podcast)}
+                                size="sm"
+                                className="w-full"
+                            >
                                 <Play className="mr-2 h-4 w-4" />
-                            )}
-                            {isGenerating ? 'Generating...' : 'Generate'}
-                        </Button>
-                    )}
+                                Play
+                            </Button>
+                        )}
 
-                    {canPlay && (
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                                if (podcast.audio_url) {
-                                    window.open(podcast.audio_url, '_blank');
-                                }
-                            }}
-                        >
-                            <Download className="h-4 w-4" />
-                        </Button>
-                    )}
+                        {canGenerate && onGenerate && (
+                            <Button
+                                onClick={() => onGenerate(podcast)}
+                                size="sm"
+                                variant="outline"
+                                className="w-full"
+                                disabled={isGenerating}
+                            >
+                                {isGenerating ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                    <Play className="mr-2 h-4 w-4" />
+                                )}
+                                {isGenerating ? 'Generating...' : 'Generate'}
+                            </Button>
+                        )}
+                    </div>
+
+                    {/* Download & Share Component */}
+                    <PodcastDownloadShare
+                        podcast={podcast}
+                        onDownload={() => {
+                            // Optional: refresh the podcast data or show success message
+                            console.log('Download completed for:', podcast.title);
+                        }}
+                    />
                 </div>
             </CardContent>
         </Card>
