@@ -16,63 +16,24 @@ interface GenerationProgressModalProps {
     onGenerationError?: (error: string) => void;
 }
 
-interface PhaseInfo {
-    name: string;
-    description: string;
-    estimatedDuration: number; // in seconds
-    icon: React.ReactNode;
+interface RetryInfo {
+    attempt: number;
+    max_attempts: number;
+    last_error?: string;
+    recovered?: boolean;
+    attempts_used?: number;
 }
 
-const GENERATION_PHASES: Record<string, PhaseInfo> = {
-    research: {
-        name: 'Research',
-        description: 'Analyzing topic and gathering information',
-        estimatedDuration: 30,
-        icon: <Loader2 className="h-4 w-4" />
-    },
-    planning: {
-        name: 'Content Planning',
-        description: 'Creating strategic content outline',
-        estimatedDuration: 20,
-        icon: <Loader2 className="h-4 w-4" />
-    },
-    script_generation: {
-        name: 'Script Generation',
-        description: 'Generating and refining dialogue',
-        estimatedDuration: 45,
-        icon: <Loader2 className="h-4 w-4" />
-    },
-    voice_generation: {
-        name: 'Voice Generation',
-        description: 'Creating audio with Chatterbox TTS',
-        estimatedDuration: 60,
-        icon: <Loader2 className="h-4 w-4" />
-    },
-    audio_assembly: {
-        name: 'Audio Assembly',
-        description: 'Assembling final podcast episode',
-        estimatedDuration: 25,
-        icon: <Loader2 className="h-4 w-4" />
-    },
-    validation: {
-        name: 'Quality Validation',
-        description: 'Final quality checks and validation',
-        estimatedDuration: 15,
-        icon: <Loader2 className="h-4 w-4" />
-    },
-    saving: {
-        name: 'Saving',
-        description: 'Saving generated content',
-        estimatedDuration: 10,
-        icon: <Loader2 className="h-4 w-4" />
-    },
-    completed: {
-        name: 'Completed',
-        description: 'Generation completed successfully',
-        estimatedDuration: 0,
-        icon: <CheckCircle className="h-4 w-4 text-green-500" />
-    }
-};
+interface ErrorDetails {
+    error_code: string;
+    category: string;
+    severity: string;
+    suggested_action: string;
+    user_message: string;
+    retry_recommended: boolean;
+    phase?: string;
+    technical_error?: string;
+}
 
 export function GenerationProgressModal({
     isOpen,
@@ -83,40 +44,73 @@ export function GenerationProgressModal({
     onGenerationError
 }: GenerationProgressModalProps) {
     const { token } = useAuth();
-    const [currentPhase, setCurrentPhase] = useState<string>('research');
-    const [progress, setProgress] = useState(0);
-    const [message, setMessage] = useState('Initializing generation...');
-    const [isCompleted, setIsCompleted] = useState(false);
-    const [hasError, setHasError] = useState(false);
-    const [errorMessage, setErrorMessage] = useState('');
-    const [startTime, setStartTime] = useState<Date | null>(null);
-    const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState<number | null>(null);
+    const [currentPhase, setCurrentPhase] = useState<string>('initialization');
+    const [progress, setProgress] = useState<number>(0);
+    const [message, setMessage] = useState<string>('Preparing generation...');
+    const [isCompleted, setIsCompleted] = useState<boolean>(false);
+    const [hasError, setHasError] = useState<boolean>(false);
+    const [errorMessage, setErrorMessage] = useState<string>('');
+    const [errorDetails, setErrorDetails] = useState<ErrorDetails | null>(null);
+    const [retryInfo, setRetryInfo] = useState<RetryInfo | null>(null);
+    const [isRetrying, setIsRetrying] = useState<boolean>(false);
+    const [recoveryActions, setRecoveryActions] = useState<string[]>([]);
     const [generationResult, setGenerationResult] = useState<any>(null);
+    const [startTime, setStartTime] = useState<Date | null>(null);
+    const [elapsedTime, setElapsedTime] = useState<number>(0);
+
+    // Enhanced phase definitions with retry and recovery descriptions
+    const GENERATION_PHASES = {
+        'initialization': { name: 'Initialization', description: 'Setting up generation pipeline' },
+        'research': { name: 'Research', description: 'Gathering and analyzing information' },
+        'planning': { name: 'Planning', description: 'Creating content structure' },
+        'script_generation': { name: 'Script Generation', description: 'Writing dialogue and content' },
+        'voice_generation': { name: 'Voice Generation', description: 'Creating audio from text' },
+        'audio_assembly': { name: 'Audio Assembly', description: 'Combining audio elements' },
+        'validation': { name: 'Validation', description: 'Quality checking' },
+        'saving': { name: 'Saving', description: 'Finalizing and storing' },
+        'error_recovery': { name: 'Error Recovery', description: 'Handling errors and retrying' },
+        'completed': { name: 'Completed', description: 'Generation finished successfully' }
+    };
+
+    // Update elapsed time
+    useEffect(() => {
+        if (!startTime || isCompleted || hasError) return;
+
+        const interval = setInterval(() => {
+            setElapsedTime(Math.floor((new Date().getTime() - startTime.getTime()) / 1000));
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [startTime, isCompleted, hasError]);
 
     const handleProgressUpdate = (update: ProgressUpdate) => {
         if (update.generation_id !== generationId) return;
 
-        setCurrentPhase(update.phase || 'research');
         setProgress(update.progress || 0);
+        setCurrentPhase(update.phase || 'initialization');
         setMessage(update.message || 'Processing...');
 
-        // Calculate estimated time remaining
-        if (update.phase && GENERATION_PHASES[update.phase] && startTime) {
-            const phases = Object.keys(GENERATION_PHASES);
-            const currentPhaseIndex = phases.indexOf(update.phase);
-            let remainingTime = 0;
+        // Handle retry information
+        if (update.metadata?.retry_info) {
+            const retry = update.metadata.retry_info as RetryInfo;
+            setRetryInfo(retry);
+            setIsRetrying(true);
 
-            for (let i = currentPhaseIndex; i < phases.length; i++) {
-                remainingTime += GENERATION_PHASES[phases[i]].estimatedDuration;
+            if (retry.recovered) {
+                setIsRetrying(false);
+                setRetryInfo(null);
+                setRecoveryActions(prev => [...prev, `Recovered after ${retry.attempts_used} attempts`]);
             }
+        } else if (currentPhase !== 'error_recovery') {
+            setIsRetrying(false);
+            setRetryInfo(null);
+        }
 
-            // Adjust based on current progress in phase
-            if (update.progress && update.progress > 0) {
-                const phaseProgress = (update.progress % 100) / 100;
-                remainingTime -= GENERATION_PHASES[update.phase].estimatedDuration * phaseProgress;
-            }
-
-            setEstimatedTimeRemaining(Math.max(0, remainingTime));
+        // Reset error state on successful progress
+        if (hasError && update.phase !== 'error_recovery') {
+            setHasError(false);
+            setErrorMessage('');
+            setErrorDetails(null);
         }
     };
 
@@ -128,6 +122,8 @@ export function GenerationProgressModal({
         setCurrentPhase('completed');
         setMessage('Generation completed successfully!');
         setGenerationResult(result.result);
+        setIsRetrying(false);
+        setRetryInfo(null);
         onGenerationComplete?.(result.result);
     };
 
@@ -135,7 +131,15 @@ export function GenerationProgressModal({
         if (error.generation_id !== generationId) return;
 
         setHasError(true);
+        setIsRetrying(false);
+        setRetryInfo(null);
         setErrorMessage(error.error_message || 'An unknown error occurred');
+
+        // Enhanced error details
+        if (error.error_details) {
+            setErrorDetails(error.error_details as ErrorDetails);
+        }
+
         onGenerationError?.(error.error_message || 'Generation failed');
     };
 
@@ -177,136 +181,236 @@ export function GenerationProgressModal({
         }
     };
 
+    const getErrorSeverityColor = (severity?: string) => {
+        switch (severity) {
+            case 'critical': return 'text-red-600 bg-red-50 border-red-200';
+            case 'high': return 'text-orange-600 bg-orange-50 border-orange-200';
+            case 'medium': return 'text-yellow-600 bg-yellow-50 border-yellow-200';
+            case 'low': return 'text-blue-600 bg-blue-50 border-blue-200';
+            default: return 'text-gray-600 bg-gray-50 border-gray-200';
+        }
+    };
+
+    const handleRetryGeneration = () => {
+        // Reset states for retry
+        setHasError(false);
+        setErrorMessage('');
+        setErrorDetails(null);
+        setIsCompleted(false);
+        setProgress(0);
+        setCurrentPhase('initialization');
+        setMessage('Retrying generation...');
+        setStartTime(new Date());
+        setElapsedTime(0);
+        setRecoveryActions([]);
+
+        // Trigger retry through parent component or API call
+        // This would typically involve calling the generation API again
+        console.log('Retry generation requested');
+    };
+
     if (!isOpen) return null;
 
     return (
-        <Dialog open={isOpen} onOpenChange={() => { }}>
-            <DialogContent className="max-w-2xl">
+        <Dialog open={isOpen} onOpenChange={onClose}>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                    <DialogTitle className="flex items-center justify-between">
-                        <span>Generating Podcast: {podcastTitle}</span>
-                        <div className="flex items-center gap-2">
-                            {isConnected ? (
-                                <Wifi className="h-4 w-4 text-green-500" />
-                            ) : (
-                                <WifiOff className="h-4 w-4 text-red-500" />
-                            )}
-                            {!isCompleted && !hasError && (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={onClose}
-                                    className="h-8 w-8 p-0"
-                                >
-                                    <X className="h-4 w-4" />
-                                </Button>
-                            )}
-                        </div>
+                    <DialogTitle className="flex items-center gap-2">
+                        {hasError ? (
+                            <AlertCircle className="h-5 w-5 text-red-500" />
+                        ) : isCompleted ? (
+                            <CheckCircle className="h-5 w-5 text-green-500" />
+                        ) : (
+                            <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+                        )}
+                        <span>
+                            {hasError ? 'Generation Error' :
+                                isCompleted ? 'Generation Complete' :
+                                    'Generating Podcast'}
+                        </span>
                     </DialogTitle>
                 </DialogHeader>
 
                 <div className="space-y-6">
                     {/* Connection Status */}
-                    {connectionError && (
-                        <div className="flex items-center gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                            <AlertCircle className="h-4 w-4 text-yellow-600" />
-                            <span className="text-sm text-yellow-700">
-                                Connection issue: {connectionError}. Progress updates may be delayed.
+                    <div className="flex items-center gap-2 text-sm">
+                        {isConnected ? (
+                            <>
+                                <Wifi className="h-4 w-4 text-green-500" />
+                                <span className="text-green-600">Connected</span>
+                            </>
+                        ) : (
+                            <>
+                                <WifiOff className="h-4 w-4 text-red-500" />
+                                <span className="text-red-600">
+                                    {connectionError || 'Disconnected'}
+                                </span>
+                            </>
+                        )}
+
+                        {startTime && (
+                            <span className="ml-auto text-gray-500">
+                                Elapsed: {formatTime(elapsedTime)}
                             </span>
-                        </div>
-                    )}
+                        )}
+                    </div>
 
-                    {/* Error State */}
+                    {/* Podcast Info */}
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                        <h3 className="font-medium text-gray-900">{podcastTitle}</h3>
+                        {generationId && (
+                            <p className="text-sm text-gray-500 mt-1">
+                                Generation ID: {generationId}
+                            </p>
+                        )}
+                    </div>
+
+                    {/* Error Display */}
                     {hasError && (
-                        <div className="flex items-center gap-2 p-4 bg-red-50 border border-red-200 rounded-lg">
-                            <AlertCircle className="h-5 w-5 text-red-600" />
-                            <div>
-                                <p className="font-medium text-red-800">Generation Failed</p>
-                                <p className="text-sm text-red-600">{errorMessage}</p>
-                            </div>
-                        </div>
-                    )}
+                        <div className={`p-4 rounded-lg border ${getErrorSeverityColor(errorDetails?.severity)}`}>
+                            <div className="flex items-start gap-3">
+                                <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" />
+                                <div className="flex-1">
+                                    <h4 className="font-medium">
+                                        {errorDetails?.user_message || errorMessage}
+                                    </h4>
 
-                    {/* Progress Overview */}
-                    {!hasError && (
-                        <div className="space-y-4">
-                            {/* Overall Progress */}
-                            <div className="space-y-2">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-sm font-medium">Overall Progress</span>
-                                    <span className="text-sm text-gray-500">{progress}%</span>
-                                </div>
-                                <Progress value={progress} className="h-2" />
-                            </div>
+                                    {errorDetails && (
+                                        <div className="mt-2 space-y-2 text-sm">
+                                            <div className="flex gap-4">
+                                                <span>Category: <Badge variant="outline">{errorDetails.category}</Badge></span>
+                                                <span>Severity: <Badge variant="outline">{errorDetails.severity}</Badge></span>
+                                            </div>
 
-                            {/* Current Status */}
-                            <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                                <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
-                                <div>
-                                    <p className="font-medium text-blue-800">{message}</p>
-                                    {estimatedTimeRemaining !== null && (
-                                        <p className="text-sm text-blue-600">
-                                            Estimated time remaining: {formatTime(estimatedTimeRemaining)}
-                                        </p>
+                                            {errorDetails.suggested_action && (
+                                                <p className="text-gray-600">
+                                                    <strong>Suggested Action:</strong> {errorDetails.suggested_action}
+                                                </p>
+                                            )}
+
+                                            {errorDetails.phase && (
+                                                <p className="text-gray-600">
+                                                    <strong>Failed Phase:</strong> {errorDetails.phase}
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {errorDetails?.retry_recommended && (
+                                        <Button
+                                            onClick={handleRetryGeneration}
+                                            className="mt-3"
+                                            variant="outline"
+                                        >
+                                            Retry Generation
+                                        </Button>
                                     )}
                                 </div>
                             </div>
+                        </div>
+                    )}
 
-                            {/* Phase Timeline */}
-                            <div className="space-y-3">
-                                <h4 className="font-medium text-gray-900">Generation Phases</h4>
-                                <div className="space-y-2">
-                                    {Object.entries(GENERATION_PHASES).map(([phase, info]) => {
-                                        const status = getPhaseStatus(phase);
-                                        return (
-                                            <div key={phase} className="flex items-center gap-3">
-                                                <div className={`w-3 h-3 rounded-full ${getStatusColor(status)}`} />
-                                                <div className="flex-1">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className={`font-medium ${status === 'active' ? 'text-blue-700' :
-                                                                status === 'completed' ? 'text-green-700' :
-                                                                    'text-gray-500'
-                                                            }`}>
-                                                            {info.name}
-                                                        </span>
-                                                        {status === 'active' && (
-                                                            <Badge variant="outline" className="text-xs">
-                                                                Active
-                                                            </Badge>
-                                                        )}
-                                                        {status === 'completed' && (
-                                                            <CheckCircle className="h-4 w-4 text-green-500" />
-                                                        )}
-                                                    </div>
-                                                    <p className="text-sm text-gray-600">{info.description}</p>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
+                    {/* Retry Information */}
+                    {isRetrying && retryInfo && (
+                        <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
+                            <div className="flex items-center gap-2">
+                                <Loader2 className="h-4 w-4 animate-spin text-yellow-600" />
+                                <span className="font-medium text-yellow-800">
+                                    Retrying... (Attempt {retryInfo.attempt} of {retryInfo.max_attempts})
+                                </span>
+                            </div>
+                            {retryInfo.last_error && (
+                                <p className="text-sm text-yellow-700 mt-1">
+                                    Previous error: {retryInfo.last_error}
+                                </p>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Recovery Actions */}
+                    {recoveryActions.length > 0 && (
+                        <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
+                            <h4 className="font-medium text-blue-800 mb-2">Recovery Actions</h4>
+                            <ul className="text-sm text-blue-700 space-y-1">
+                                {recoveryActions.map((action, index) => (
+                                    <li key={index} className="flex items-center gap-2">
+                                        <CheckCircle className="h-3 w-3" />
+                                        {action}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
+                    {/* Progress Section */}
+                    {!hasError && (
+                        <>
+                            <div className="space-y-2">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-sm font-medium text-gray-700">
+                                        {GENERATION_PHASES[currentPhase as keyof typeof GENERATION_PHASES]?.name || currentPhase}
+                                    </span>
+                                    <span className="text-sm text-gray-500">{progress}%</span>
                                 </div>
+                                <Progress value={progress} className="h-2" />
+                                <p className="text-sm text-gray-600">{message}</p>
+                            </div>
+
+                            {/* Phase Status List */}
+                            <div className="space-y-2">
+                                <h4 className="font-medium text-gray-900">Generation Phases</h4>
+                                <div className="space-y-1">
+                                    {Object.entries(GENERATION_PHASES)
+                                        .filter(([key]) => key !== 'error_recovery') // Hide error recovery unless active
+                                        .map(([phase, info]) => {
+                                            const status = getPhaseStatus(phase);
+                                            return (
+                                                <div key={phase} className="flex items-center gap-3 p-2 rounded">
+                                                    <div
+                                                        className={`w-3 h-3 rounded-full ${getStatusColor(status)}`}
+                                                    />
+                                                    <span className={`text-sm ${status === 'active' ? 'font-medium text-gray-900' : 'text-gray-600'
+                                                        }`}>
+                                                        {info.name}
+                                                    </span>
+                                                    <span className="text-xs text-gray-400 ml-auto">
+                                                        {info.description}
+                                                    </span>
+                                                </div>
+                                            );
+                                        })}
+                                </div>
+                            </div>
+                        </>
+                    )}
+
+                    {/* Generation Result Summary */}
+                    {isCompleted && generationResult && (
+                        <div className="bg-green-50 border border-green-200 p-4 rounded-lg">
+                            <h4 className="font-medium text-green-800 mb-2">Generation Summary</h4>
+                            <div className="text-sm text-green-700 space-y-1">
+                                {generationResult.errors_encountered?.length > 0 && (
+                                    <p>Errors encountered: {generationResult.errors_encountered.length}</p>
+                                )}
+                                {generationResult.recovery_actions?.length > 0 && (
+                                    <p>Recovery actions applied: {generationResult.recovery_actions.length}</p>
+                                )}
+                                {generationResult.voice_data && (
+                                    <p>Voice generation: Successful</p>
+                                )}
+                                {generationResult.audio_data && (
+                                    <p>Audio assembly: Successful</p>
+                                )}
                             </div>
                         </div>
                     )}
 
-                    {/* Completion Actions */}
-                    {(isCompleted || hasError) && (
-                        <div className="flex justify-end gap-3 pt-4 border-t">
-                            {isCompleted && generationResult && (
-                                <Button
-                                    onClick={() => {
-                                        // You could trigger a download or redirect here
-                                        console.log('Generation result:', generationResult);
-                                    }}
-                                    className="bg-green-600 hover:bg-green-700"
-                                >
-                                    View Result
-                                </Button>
-                            )}
-                            <Button onClick={onClose} variant="outline">
-                                {isCompleted ? 'Close' : 'Dismiss'}
-                            </Button>
-                        </div>
-                    )}
+                    {/* Close Button */}
+                    <div className="flex justify-end">
+                        <Button onClick={onClose} variant="outline">
+                            {isCompleted || hasError ? 'Close' : 'Cancel'}
+                        </Button>
+                    </div>
                 </div>
             </DialogContent>
         </Dialog>

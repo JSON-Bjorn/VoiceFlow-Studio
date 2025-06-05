@@ -19,7 +19,7 @@ from ..services.chatterbox_service import (
     TTSResponse,
 )
 from ..models.user import User
-from ..api.auth import get_current_user
+from ..core.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 

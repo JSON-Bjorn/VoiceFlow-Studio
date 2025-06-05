@@ -28,6 +28,7 @@ from app.api import (
     storage,
     audio,
     websocket,
+    error_monitoring,
 )
 
 # Load environment variables
@@ -67,6 +68,7 @@ app.include_router(stripe_api.router)
 app.include_router(ai_pipeline.router)
 app.include_router(storage.router)
 app.include_router(audio.router)
+app.include_router(error_monitoring.router, prefix="/api/errors")
 
 # Include WebSocket routes
 app.include_router(websocket.router)

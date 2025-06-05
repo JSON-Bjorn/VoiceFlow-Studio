@@ -7,7 +7,7 @@ from fastapi import (
     status,
 )
 from ..services.websocket_manager import websocket_manager
-from ..core.auth import get_current_user_from_token
+from ..core.auth import get_current_user_from_token, get_current_user
 from ..models.user import User
 import logging
 import json
@@ -99,7 +99,7 @@ async def websocket_progress_endpoint(websocket: WebSocket, token: str):
 
 @router.get("/ws/status/{generation_id}")
 async def get_generation_status(
-    generation_id: str, current_user: User = Depends(get_current_user_from_token)
+    generation_id: str, current_user: User = Depends(get_current_user)
 ):
     """
     HTTP endpoint to get current generation status (fallback for non-WebSocket clients)

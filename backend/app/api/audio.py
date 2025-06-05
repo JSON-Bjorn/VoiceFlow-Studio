@@ -8,7 +8,15 @@ This module provides endpoints for audio processing operations:
 - Audio processing status
 """
 
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, UploadFile, File
+from fastapi import (
+    APIRouter,
+    HTTPException,
+    Depends,
+    BackgroundTasks,
+    UploadFile,
+    File,
+    Form,
+)
 from pydantic import BaseModel, Field
 from typing import Dict, List, Any, Optional
 from datetime import datetime
@@ -222,8 +230,8 @@ async def get_available_audio_assets(current_user: User = Depends(get_current_us
 @router.post("/assets/upload")
 async def upload_custom_audio_asset(
     file: UploadFile = File(...),
-    asset_id: str = Field(..., description="Unique identifier for the asset"),
-    asset_type: str = Field(
+    asset_id: str = Form(..., description="Unique identifier for the asset"),
+    asset_type: str = Form(
         ..., description="Type of asset (intro, outro, transition, background)"
     ),
     current_user: User = Depends(get_current_user),

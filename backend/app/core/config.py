@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     jwt_expiration_hours: int = 24
 
     # Database Configuration
-    database_url: str = "postgresql://postgres:password@localhost/voiceflow_studio"
+    database_url: str = "sqlite:///./voiceflow_studio.db"
 
     # Frontend URL for CORS
     frontend_url: str = "http://localhost:3000"

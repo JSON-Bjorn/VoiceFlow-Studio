@@ -14,13 +14,20 @@ from .personality_adaptation_agent import PersonalityAdaptationAgent
 from .voice_agent import VoiceAgent
 from .audio_agent import AudioAgent
 from sqlalchemy.orm import Session
+from .error_handler import (
+    error_handler,
+    RetryConfig,
+    ErrorCategory,
+    with_error_handling,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class EnhancedPipelineOrchestrator:
     """
-    Enhanced Pipeline Orchestrator with 6-agent system and quality assurance
+    Enhanced orchestrator for the 6-agent podcast generation pipeline
+    with advanced error handling, retry mechanisms, and recovery options
     """
 
     def __init__(self, db: Session):
@@ -37,17 +44,49 @@ class EnhancedPipelineOrchestrator:
         self.voice_agent = VoiceAgent()
         self.audio_agent = AudioAgent()
 
+        # Enhanced error handling
+        self.error_handler = error_handler
+        self.recovery_strategies = self._initialize_recovery_strategies()
+
+        # Generation state
+        self.current_generation = None
+        self.generation_history = []
+
         # Quality thresholds
         self.quality_thresholds = {
+            "minimum_research_quality": 0.7,
+            "minimum_content_plan_quality": 0.75,
+            "minimum_script_quality": 0.8,
             "minimum_coherence_score": 0.75,
-            "minimum_engagement_score": 0.70,
+            "content_plan_quality": 0.7,
             "maximum_iterations": 3,
             "target_script_length_variance": 0.15,  # 15% variance allowed
         }
 
-        # Generation state tracking
-        self.current_generation = None
-        self.generation_history = []
+    def _initialize_recovery_strategies(self) -> Dict[str, Dict]:
+        """Initialize recovery strategies for different error types"""
+        return {
+            "research_failure": {
+                "fallback_strategy": "use_simplified_research",
+                "quality_reduction": 0.1,
+                "user_message": "Using simplified research approach to continue generation",
+            },
+            "content_planning_failure": {
+                "fallback_strategy": "use_basic_structure",
+                "quality_reduction": 0.15,
+                "user_message": "Using basic content structure to continue generation",
+            },
+            "script_generation_failure": {
+                "fallback_strategy": "regenerate_with_lower_standards",
+                "quality_reduction": 0.2,
+                "user_message": "Adjusting quality standards to complete generation",
+            },
+            "voice_generation_failure": {
+                "fallback_strategy": "skip_voice_generation",
+                "quality_reduction": 0.0,
+                "user_message": "Continuing with text-only output",
+            },
+        }
 
     async def generate_enhanced_podcast(
         self,
@@ -57,44 +96,7 @@ class EnhancedPipelineOrchestrator:
         quality_settings: Optional[Dict] = None,
     ) -> Dict[str, Any]:
         """
-        Generate podcast with enhanced flow and user inputs
-
-        Args:
-            podcast_id: ID of the podcast to generate
-            user_inputs: Enhanced user inputs including host details, preferences, etc.
-            progress_callback: Optional callback for progress updates
-            quality_settings: Optional quality thresholds and settings
-
-        Expected user_inputs format:
-        {
-            "topic": "Main topic",
-            "target_duration": 10,
-            "hosts": {
-                "host_1": {
-                    "name": "Felix",
-                    "personality": "analytical, curious",
-                    "voice_id": "voice_123",
-                    "role": "primary_questioner"
-                },
-                "host_2": {
-                    "name": "Bjorn",
-                    "personality": "enthusiastic, relatable",
-                    "voice_id": "voice_456",
-                    "role": "storyteller"
-                }
-            },
-            "style_preferences": {
-                "tone": "conversational",
-                "complexity": "accessible",
-                "humor_level": "light",
-                "pacing": "moderate"
-            },
-            "content_preferences": {
-                "focus_areas": ["practical applications", "recent developments"],
-                "avoid_topics": ["overly technical details"],
-                "target_audience": "general public"
-            }
-        }
+        Generate enhanced podcast with comprehensive error handling and recovery
         """
         logger.info(f"Starting enhanced podcast generation for ID: {podcast_id}")
 
@@ -109,7 +111,7 @@ class EnhancedPipelineOrchestrator:
         )
         self.current_generation = generation_state
 
-        # Helper function to send progress updates via WebSocket
+        # Helper function to send progress updates via WebSocket with error context
         async def send_progress(
             phase: str, progress: int, message: str, metadata: Optional[Dict] = None
         ):
@@ -125,11 +127,24 @@ class EnhancedPipelineOrchestrator:
             if progress_callback:
                 await progress_callback(phase, progress, message)
 
+        # Enhanced error callback for retry notifications
+        async def error_progress_callback(
+            message: str, retry_info: Optional[Dict] = None
+        ):
+            metadata = {"retry_info": retry_info} if retry_info else None
+            await send_progress(
+                "error_recovery", generation_state.get("progress", 0), message, metadata
+            )
+
         try:
-            # Phase 1: Enhanced Research with User Context
+            # Phase 1: Enhanced Research with Error Recovery
             await send_progress("research", 10, "Conducting contextual research")
-            research_result = await self._enhanced_research_phase(
-                user_inputs, generation_state
+            research_result = await self._execute_with_recovery(
+                self._enhanced_research_phase,
+                "research_failure",
+                error_progress_callback,
+                user_inputs,
+                generation_state,
             )
 
             if not research_result["success"]:
@@ -140,13 +155,18 @@ class EnhancedPipelineOrchestrator:
                     error_details=research_result,
                 )
                 return await self._handle_phase_failure(
-                    "research", research_result, generation_state
+                    "research", research_result, generation_state, podcast.user_id
                 )
 
-            # Phase 2: Strategic Content Planning
+            # Phase 2: Strategic Content Planning with Error Recovery
             await send_progress("planning", 25, "Creating strategic content plan")
-            planning_result = await self._content_planning_phase(
-                research_result["data"], user_inputs, generation_state
+            planning_result = await self._execute_with_recovery(
+                self._content_planning_phase,
+                "content_planning_failure",
+                error_progress_callback,
+                research_result["data"],
+                user_inputs,
+                generation_state,
             )
 
             if not planning_result["success"]:
@@ -157,14 +177,17 @@ class EnhancedPipelineOrchestrator:
                     error_details=planning_result,
                 )
                 return await self._handle_phase_failure(
-                    "planning", planning_result, generation_state
+                    "planning", planning_result, generation_state, podcast.user_id
                 )
 
-            # Phase 3: Iterative Script Generation with Feedback
+            # Phase 3: Iterative Script Generation with Enhanced Error Handling
             await send_progress(
                 "script_generation", 50, "Generating and refining script"
             )
-            script_result = await self._iterative_script_generation(
+            script_result = await self._execute_with_recovery(
+                self._iterative_script_generation,
+                "script_generation_failure",
+                error_progress_callback,
                 research_result["data"],
                 planning_result["data"],
                 user_inputs,
@@ -180,48 +203,62 @@ class EnhancedPipelineOrchestrator:
                     error_details=script_result,
                 )
                 return await self._handle_phase_failure(
-                    "script", script_result, generation_state
+                    "script", script_result, generation_state, podcast.user_id
                 )
 
-            # Phase 4: Voice Generation (Optional)
+            # Phase 4: Voice Generation with Circuit Breaker Protection
             voice_result = None
             if (
                 user_inputs.get("generate_voice", False)
                 and self.voice_agent.is_available()
             ):
                 await send_progress("voice_generation", 65, "Generating voice audio")
-                voice_result = await self._voice_generation_phase(
-                    script_result["data"], user_inputs, generation_state, send_progress
-                )
-
-                if voice_result and not voice_result["success"]:
-                    logger.warning(
-                        f"Voice generation failed: {voice_result.get('error', 'Unknown error')}"
+                try:
+                    voice_result = await self._execute_with_recovery(
+                        self._voice_generation_phase,
+                        "voice_generation_failure",
+                        error_progress_callback,
+                        script_result["data"],
+                        user_inputs,
+                        generation_state,
+                        send_progress,
                     )
-                    # Continue without voice - this is optional
+                except Exception as e:
+                    # Voice generation failure is non-critical, continue without voice
+                    logger.warning(
+                        f"Voice generation failed, continuing without voice: {e}"
+                    )
+                    await send_progress(
+                        "voice_generation", 65, "Voice generation skipped due to error"
+                    )
 
-            # Phase 5: Audio Assembly (Optional - only if voice was generated)
+            # Phase 5: Audio Assembly with Error Recovery
             audio_result = None
             if (
                 voice_result
                 and voice_result["success"]
                 and self.audio_agent.is_available()
-                and user_inputs.get(
-                    "assemble_audio", True
-                )  # Default to True if voice was generated
+                and user_inputs.get("assemble_audio", True)
             ):
                 await send_progress(
                     "audio_assembly", 75, "Assembling final audio episode"
                 )
-                audio_result = await self._audio_assembly_phase(
-                    voice_result, user_inputs, generation_state
-                )
-
-                if audio_result and not audio_result["success"]:
-                    logger.warning(
-                        f"Audio assembly failed: {audio_result.get('error', 'Unknown error')}"
+                try:
+                    audio_result = await self._execute_with_recovery(
+                        self._audio_assembly_phase,
+                        "audio_assembly_failure",
+                        error_progress_callback,
+                        voice_result,
+                        user_inputs,
+                        generation_state,
                     )
-                    # Continue without assembled audio - voice segments are still available
+                except Exception as e:
+                    logger.warning(
+                        f"Audio assembly failed, continuing without assembled audio: {e}"
+                    )
+                    await send_progress(
+                        "audio_assembly", 75, "Audio assembly skipped due to error"
+                    )
 
             # Phase 6: Final Quality Validation and Optimization
             await send_progress("validation", 85, "Final quality validation")
@@ -267,6 +304,8 @@ class EnhancedPipelineOrchestrator:
                     script_result["data"],
                 ),
                 "iterations_performed": generation_state.get("iterations", {}),
+                "errors_encountered": generation_state.get("errors", []),
+                "recovery_actions": generation_state.get("recovery_actions", []),
                 "metadata": generation_state,
                 "completed_at": datetime.utcnow().isoformat(),
             }
@@ -290,16 +329,25 @@ class EnhancedPipelineOrchestrator:
                 f"Enhanced podcast generation failed for ID {podcast_id}: {str(e)}"
             )
 
-            # Send error notification via WebSocket
+            # Classify error for better user messaging
+            error_details = self.error_handler.classify_error(e)
+
+            # Send detailed error notification via WebSocket
             await websocket_manager.send_error_notification(
                 user_id=podcast.user_id,
                 generation_id=generation_state["id"],
-                error_message=str(e),
-                error_details={"generation_state": generation_state},
+                error_message=error_details.user_message,
+                error_details={
+                    "error_code": error_details.error_code,
+                    "category": error_details.category.value,
+                    "severity": error_details.severity.value,
+                    "suggested_action": error_details.suggested_action,
+                    "generation_state": generation_state,
+                },
             )
 
             return await self._handle_generation_failure(
-                podcast_id, str(e), generation_state
+                podcast_id, str(e), generation_state, error_details
             )
 
     def _initialize_enhanced_state(
@@ -889,12 +937,35 @@ class EnhancedPipelineOrchestrator:
         }
 
     async def _handle_phase_failure(
-        self, phase_name: str, result: Dict[str, Any], generation_state: Dict[str, Any]
+        self,
+        phase_name: str,
+        result: Dict[str, Any],
+        generation_state: Dict[str, Any],
+        user_id: int,
     ) -> Dict[str, Any]:
-        """Handle failure in a specific phase"""
+        """Enhanced phase failure handling with user notifications"""
 
         error_msg = result.get("error", f"{phase_name} phase failed")
-        generation_state["errors"].append(f"{phase_name}: {error_msg}")
+        generation_state["errors"].append(
+            {
+                "phase": phase_name,
+                "error": error_msg,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+        )
+
+        # Send user-friendly error notification
+        await websocket_manager.send_error_notification(
+            user_id=user_id,
+            generation_id=generation_state["id"],
+            error_message=f"Generation failed during {phase_name} phase",
+            error_details={
+                "phase": phase_name,
+                "user_message": f"We encountered an issue during the {phase_name} phase. Please try again.",
+                "technical_error": error_msg,
+                "retry_suggested": True,
+            },
+        )
 
         return {
             "success": False,
@@ -905,9 +976,13 @@ class EnhancedPipelineOrchestrator:
         }
 
     async def _handle_generation_failure(
-        self, podcast_id: int, error: str, generation_state: Dict[str, Any]
+        self,
+        podcast_id: int,
+        error: str,
+        generation_state: Dict[str, Any],
+        error_details: Optional[Any] = None,
     ) -> Dict[str, Any]:
-        """Handle overall generation failure"""
+        """Enhanced generation failure handling with detailed error information"""
 
         try:
             self.podcast_service.update_podcast_status(podcast_id, "failed")
@@ -918,6 +993,18 @@ class EnhancedPipelineOrchestrator:
             "success": False,
             "podcast_id": podcast_id,
             "error": error,
+            "error_details": {
+                "code": error_details.error_code if error_details else "UNKNOWN_ERROR",
+                "category": error_details.category.value
+                if error_details
+                else "unknown",
+                "user_message": error_details.user_message
+                if error_details
+                else "An unexpected error occurred",
+                "retry_recommended": error_details.is_retryable
+                if error_details
+                else True,
+            },
             "generation_state": generation_state,
             "failed_at": datetime.utcnow().isoformat(),
         }
@@ -1018,6 +1105,239 @@ class EnhancedPipelineOrchestrator:
                 text_parts.append(f"**{speaker}:** {text}\n")
 
         return "\n".join(text_parts)
+
+    async def _execute_with_recovery(
+        self,
+        func: Callable,
+        recovery_type: str,
+        progress_callback: Callable,
+        *args,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Execute function with recovery strategy on failure"""
+
+        # Configure retry based on function type
+        if "research" in func.__name__:
+            retry_config = RetryConfig(max_attempts=3, base_delay=2.0)
+        elif "content_planning" in func.__name__:
+            retry_config = RetryConfig(max_attempts=2, base_delay=1.5)
+        elif "script_generation" in func.__name__:
+            retry_config = RetryConfig(max_attempts=3, base_delay=3.0, max_delay=30.0)
+        elif "voice_generation" in func.__name__:
+            retry_config = RetryConfig(max_attempts=2, base_delay=5.0)
+        else:
+            retry_config = RetryConfig(max_attempts=2, base_delay=1.0)
+
+        try:
+            result = await self.error_handler.execute_with_retry(
+                func,
+                *args,
+                retry_config=retry_config,
+                context={"function": func.__name__, "recovery_type": recovery_type},
+                progress_callback=progress_callback,
+                **kwargs,
+            )
+            return result
+
+        except Exception as e:
+            logger.warning(
+                f"Function {func.__name__} failed after retries, attempting recovery"
+            )
+
+            # Attempt recovery strategy
+            recovery_strategy = self.recovery_strategies.get(recovery_type)
+            if recovery_strategy and recovery_strategy["fallback_strategy"]:
+                try:
+                    await progress_callback(
+                        f"Attempting recovery: {recovery_strategy['user_message']}"
+                    )
+
+                    # Apply recovery strategy
+                    recovery_result = await self._apply_recovery_strategy(
+                        func.__name__, recovery_strategy, *args, **kwargs
+                    )
+
+                    if recovery_result and recovery_result.get("success"):
+                        # Record recovery action
+                        if "recovery_actions" not in kwargs.get("generation_state", {}):
+                            kwargs["generation_state"]["recovery_actions"] = []
+                        kwargs["generation_state"]["recovery_actions"].append(
+                            {
+                                "phase": func.__name__,
+                                "strategy": recovery_strategy["fallback_strategy"],
+                                "message": recovery_strategy["user_message"],
+                                "timestamp": datetime.utcnow().isoformat(),
+                            }
+                        )
+
+                        await progress_callback(
+                            "Recovery successful, continuing generation..."
+                        )
+                        return recovery_result
+
+                except Exception as recovery_error:
+                    logger.error(f"Recovery strategy failed: {recovery_error}")
+
+            # If recovery fails, re-raise original error
+            raise e
+
+    async def _apply_recovery_strategy(
+        self, function_name: str, strategy: Dict, *args, **kwargs
+    ) -> Optional[Dict[str, Any]]:
+        """Apply specific recovery strategy based on function and error type"""
+
+        fallback_strategy = strategy["fallback_strategy"]
+
+        if (
+            function_name == "_enhanced_research_phase"
+            and fallback_strategy == "use_simplified_research"
+        ):
+            # Simplified research with reduced requirements
+            return await self._simplified_research_fallback(*args, **kwargs)
+
+        elif (
+            function_name == "_content_planning_phase"
+            and fallback_strategy == "use_basic_structure"
+        ):
+            # Basic content structure fallback
+            return await self._basic_content_planning_fallback(*args, **kwargs)
+
+        elif (
+            function_name == "_iterative_script_generation"
+            and fallback_strategy == "regenerate_with_lower_standards"
+        ):
+            # Lower quality standards for script generation
+            return await self._simplified_script_generation_fallback(*args, **kwargs)
+
+        elif (
+            function_name == "_voice_generation_phase"
+            and fallback_strategy == "skip_voice_generation"
+        ):
+            # Skip voice generation and return success
+            return {
+                "success": True,
+                "data": None,
+                "message": "Voice generation skipped due to errors",
+            }
+
+        return None
+
+    async def _simplified_research_fallback(
+        self, user_inputs: Dict, generation_state: Dict
+    ) -> Dict[str, Any]:
+        """Simplified research strategy with basic topic exploration"""
+        try:
+            topic = user_inputs.get("topic", "General Discussion")
+
+            # Basic research data structure
+            simplified_research = {
+                "main_topic": topic,
+                "subtopics": [
+                    f"Introduction to {topic}",
+                    f"Key aspects of {topic}",
+                    f"Discussion points about {topic}",
+                    f"Conclusion on {topic}",
+                ],
+                "key_points": [
+                    f"Understanding {topic}",
+                    f"Exploring different perspectives",
+                    f"Practical applications",
+                    f"Future considerations",
+                ],
+                "sources": ["Fallback research strategy"],
+                "research_quality": "simplified",
+            }
+
+            return {
+                "success": True,
+                "data": simplified_research,
+                "validation": {"quality_score": 0.6},
+            }
+
+        except Exception as e:
+            logger.error(f"Simplified research fallback failed: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def _basic_content_planning_fallback(
+        self, research_data: Dict, user_inputs: Dict, generation_state: Dict
+    ) -> Dict[str, Any]:
+        """Basic content planning with simple structure"""
+        try:
+            topic = research_data.get("main_topic", "Discussion")
+            duration = user_inputs.get("target_duration", 10)
+
+            basic_plan = {
+                "title": f"Discussion on {topic}",
+                "estimated_duration": duration,
+                "content_structure": {
+                    "introduction": f"Welcome to our discussion about {topic}",
+                    "main_content": [
+                        {"section": "Overview", "duration": duration * 0.2},
+                        {"section": "Key Discussion", "duration": duration * 0.6},
+                        {"section": "Conclusion", "duration": duration * 0.2},
+                    ],
+                },
+                "key_themes": research_data.get("subtopics", [topic]),
+                "planning_quality": "basic",
+            }
+
+            return {
+                "success": True,
+                "data": basic_plan,
+                "validation": {"quality_score": 0.65},
+            }
+
+        except Exception as e:
+            logger.error(f"Basic content planning fallback failed: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def _simplified_script_generation_fallback(
+        self,
+        research_data: Dict,
+        content_plan: Dict,
+        user_inputs: Dict,
+        generation_state: Dict,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Simplified script generation with lower quality standards"""
+        try:
+            # Lower quality thresholds for fallback
+            original_threshold = generation_state["quality_thresholds"][
+                "minimum_script_quality"
+            ]
+            generation_state["quality_thresholds"]["minimum_script_quality"] = 0.6
+
+            # Generate basic script
+            script_result = await self.script_agent.generate_enhanced_script(
+                research_data=research_data,
+                content_plan=content_plan,
+                user_inputs=user_inputs,
+                iteration=0,
+                simplified_mode=True,
+            )
+
+            # Restore original threshold
+            generation_state["quality_thresholds"]["minimum_script_quality"] = (
+                original_threshold
+            )
+
+            if script_result.get("success"):
+                return {
+                    "success": True,
+                    "data": script_result["data"],
+                    "quality_scores": {"overall_score": 0.6},
+                    "iterations_used": 1,
+                    "fallback_used": True,
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "Simplified script generation failed",
+                }
+
+        except Exception as e:
+            logger.error(f"Simplified script generation fallback failed: {e}")
+            return {"success": False, "error": str(e)}
 
     async def _update_progress(
         self, callback: Optional[Callable], message: str, progress: int

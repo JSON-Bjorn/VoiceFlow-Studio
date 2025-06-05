@@ -15,3 +15,13 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+async def init_db():
+    """Initialize the database by creating all tables"""
+    # Import all models to ensure they are registered with Base
+    from app.models import user, podcast, credit_transaction
+
+    # Create all tables
+    Base.metadata.create_all(bind=engine)
+    print("Database tables created successfully")
