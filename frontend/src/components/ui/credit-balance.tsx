@@ -66,7 +66,7 @@ export function CreditBalance({
                     <Button
                         size="sm"
                         onClick={onBuyCredits}
-                        className="bg-purple-600 hover:bg-purple-700"
+                        className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-semibold shadow-md hover:shadow-lg transition-all"
                     >
                         <Plus className="h-4 w-4 mr-1" />
                         Buy
@@ -131,7 +131,7 @@ export function CreditBalance({
                     {showBuyButton && (
                         <Button
                             onClick={onBuyCredits}
-                            className="w-full bg-purple-600 hover:bg-purple-700"
+                            className="w-full bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-semibold shadow-md hover:shadow-lg transition-all"
                         >
                             <Plus className="h-4 w-4 mr-2" />
                             Buy More Credits

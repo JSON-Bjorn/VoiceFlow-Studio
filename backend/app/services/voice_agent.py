@@ -12,6 +12,7 @@ from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 
 from .chatterbox_service import chatterbox_service, TTSResponse
+from .storage_service import storage_service
 
 logger = logging.getLogger(__name__)
 
@@ -184,14 +185,48 @@ class VoiceAgent:
                     )
 
                     if tts_response.success:
+                        # Save audio data using storage service for proper path handling
+                        # Create a unique segment identifier
+                        segment_id = f"segment_{i}_{speaker_id}_{int(time.time())}"
+
+                        # Save using storage service with proper podcast ID structure
+                        # Use a temporary podcast ID for segments if none provided
+                        temp_podcast_id = "segments"
+
+                        file_path = await storage_service.save_audio_file(
+                            audio_data=tts_response.audio_data,
+                            podcast_id=temp_podcast_id,
+                            segment_id=segment_id,
+                            file_type="wav",
+                            metadata={
+                                "speaker_id": speaker_id,
+                                "text_preview": text[:100] + "..."
+                                if len(text) > 100
+                                else text,
+                                "duration": tts_response.duration,
+                                "segment_index": i,
+                                "voice_id": voice_id,
+                            },
+                        )
+
+                        # Get the filename from the file path for URL generation
+                        filename = file_path.split("/")[-1]
+
                         audio_segments.append(
                             {
                                 "segment_index": i,
+                                "segment_id": f"seg_{i}",
                                 "text": text,
+                                "speaker": speaker_id,
                                 "speaker_id": speaker_id,
                                 "voice_id": voice_id,
                                 "audio_data": tts_response.audio_data,
                                 "duration": tts_response.duration,
+                                "duration_estimate": tts_response.duration,
+                                "character_count": len(text),
+                                "file_path": file_path,  # This is now the correct relative path
+                                "file_url": f"/api/storage/files/{file_path}",
+                                "timestamp": time.time(),
                                 "success": True,
                                 "processing_time": time.time() - segment_start,
                             }

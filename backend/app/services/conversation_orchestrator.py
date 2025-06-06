@@ -66,9 +66,15 @@ class ConversationOrchestrator:
             await self._update_progress(
                 progress_callback, "Retrieving podcast details", 5
             )
-            podcast = self.podcast_service.get_podcast_by_id(podcast_id)
-            if not podcast:
+            # For conversation orchestrator, we'll allow the call without user_id since
+            # it's an internal service - this is a temporary fix
+            # In production, we should pass user_id to this method too
+            podcast_query = (
+                self.db.query(Podcast).filter(Podcast.id == podcast_id).first()
+            )
+            if not podcast_query:
                 raise ValueError(f"Podcast with ID {podcast_id} not found")
+            podcast = podcast_query
 
             generation_state["podcast"] = {
                 "id": podcast.id,
@@ -145,7 +151,7 @@ class ConversationOrchestrator:
         except Exception as e:
             logger.error(f"Podcast generation failed for ID {podcast_id}: {str(e)}")
 
-            # Update podcast status to failed
+            # Update podcast status to failed (no user_id needed for internal service)
             try:
                 self.podcast_service.update_podcast_status(podcast_id, "failed")
             except Exception as update_error:

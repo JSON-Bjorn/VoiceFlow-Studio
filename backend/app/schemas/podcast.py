@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from ..models.podcast import PodcastStatus
 
 
@@ -21,6 +21,11 @@ class PodcastUpdate(BaseModel):
     status: Optional[PodcastStatus] = None
     audio_url: Optional[str] = None
     script: Optional[str] = None
+    has_audio: Optional[bool] = None
+    audio_file_paths: Optional[List[str]] = None
+    audio_segments_count: Optional[int] = None
+    audio_total_duration: Optional[float] = None
+    voice_generation_cost: Optional[str] = None
 
 
 class PodcastResponse(PodcastBase):
@@ -29,6 +34,11 @@ class PodcastResponse(PodcastBase):
     status: PodcastStatus
     audio_url: Optional[str] = None
     script: Optional[str] = None
+    has_audio: Optional[bool] = None
+    audio_file_paths: Optional[List[str]] = None
+    audio_segments_count: Optional[int] = None
+    audio_total_duration: Optional[float] = None
+    voice_generation_cost: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 

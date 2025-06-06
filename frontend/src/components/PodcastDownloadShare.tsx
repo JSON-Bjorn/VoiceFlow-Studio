@@ -29,6 +29,7 @@ interface Podcast {
     topic: string
     status: string
     has_audio?: boolean
+    audio_url?: string
 }
 
 interface ShareInfo {
@@ -67,7 +68,7 @@ export function PodcastDownloadShare({ podcast, onDownload }: PodcastDownloadSha
     const [isDownloading, setIsDownloading] = useState(false)
     const [isLoadingShareInfo, setIsLoadingShareInfo] = useState(false)
 
-    const canDownload = podcast.status === 'COMPLETED' && podcast.has_audio
+    const canDownload = podcast.status === 'completed' && (podcast.has_audio || podcast.audio_url || true) // Temporary: allow all completed podcasts to test download
 
     const handleDownload = async () => {
         if (!canDownload) {
@@ -78,13 +79,13 @@ export function PodcastDownloadShare({ podcast, onDownload }: PodcastDownloadSha
         setIsDownloading(true)
 
         try {
-            const token = localStorage.getItem('token')
+            const token = localStorage.getItem('access_token')
             if (!token) {
                 showToast('Please login to download podcasts', 'error');
                 return
             }
 
-            const response = await fetch(`/api/podcasts/${podcast.id}/download`, {
+            const response = await fetch(`http://localhost:8000/api/podcasts/${podcast.id}/download`, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                 },
@@ -132,13 +133,13 @@ export function PodcastDownloadShare({ podcast, onDownload }: PodcastDownloadSha
         setIsLoadingShareInfo(true)
 
         try {
-            const token = localStorage.getItem('token')
+            const token = localStorage.getItem('access_token')
             if (!token) {
                 showToast('Please login to share podcasts', 'error');
                 return
             }
 
-            const response = await fetch(`/api/podcasts/${podcast.id}/share-info`, {
+            const response = await fetch(`http://localhost:8000/api/podcasts/${podcast.id}/share-info`, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                 },
@@ -179,10 +180,12 @@ export function PodcastDownloadShare({ podcast, onDownload }: PodcastDownloadSha
             {/* Download Button */}
             <Button
                 size="sm"
-                variant={canDownload ? "success" : "outline"}
                 onClick={handleDownload}
                 disabled={!canDownload || isDownloading}
-                className="flex items-center space-x-1"
+                className={`flex items-center space-x-1 transition-all duration-200 ${canDownload
+                    ? 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white shadow-lg hover:shadow-green-500/25 border-0'
+                    : 'border-slate-600 text-slate-400 hover:bg-slate-700 hover:text-slate-300 bg-slate-800/50'
+                    } ${(!canDownload || isDownloading) ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
                 {isDownloading ? (
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
@@ -200,7 +203,7 @@ export function PodcastDownloadShare({ podcast, onDownload }: PodcastDownloadSha
                         variant="outline"
                         onClick={handleShare}
                         disabled={isLoadingShareInfo}
-                        className="flex items-center space-x-1"
+                        className="flex items-center space-x-1 border-purple-500/50 text-purple-300 hover:bg-purple-500/20 hover:text-purple-200 hover:border-purple-400 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {isLoadingShareInfo ? (
                             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>

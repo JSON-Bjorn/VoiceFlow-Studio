@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from ..core.database import get_db
-from ..core.dependencies import get_current_active_user
+from ..core.auth import get_current_user
 from ..schemas.credit import (
     CreditTransactionResponse,
     CreditSummary,
@@ -14,6 +14,13 @@ from ..models.user import User
 from ..services.credit_service import CreditService
 
 router = APIRouter(prefix="/credits", tags=["credits"])
+
+
+def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:
+    """Get current active user"""
+    if not current_user.is_active:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
 
 
 @router.get("/summary", response_model=CreditSummary)

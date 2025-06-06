@@ -2,12 +2,19 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..core.database import get_db
-from ..core.dependencies import get_current_active_user
+from ..core.auth import get_current_user
 from ..schemas.user import UserResponse, UserUpdateEmail, UserUpdatePassword
 from ..models.user import User
 from ..services.user_service import UserService
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:
+    """Get current active user"""
+    if not current_user.is_active:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
 
 
 @router.get("/me", response_model=UserResponse)

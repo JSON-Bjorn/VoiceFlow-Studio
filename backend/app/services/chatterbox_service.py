@@ -12,13 +12,48 @@ import io
 import hashlib
 import tempfile
 import time
+import warnings
 from typing import Optional, Dict, List, Any, BinaryIO
 from pathlib import Path
 from dataclasses import dataclass
 
+# Import warning suppression context manager
+from app.core.config import suppress_model_warnings
+
+# Suppress specific deprecation warnings from dependencies
+warnings.filterwarnings("ignore", category=FutureWarning, module="diffusers")
+warnings.filterwarnings(
+    "ignore", message=".*LoRACompatibleLinear.*", category=FutureWarning
+)
+warnings.filterwarnings(
+    "ignore", message=".*torch.backends.cuda.sdp_kernel.*", category=FutureWarning
+)
+# Suppress diffusers v0.29+ deprecation warnings
+warnings.filterwarnings(
+    "ignore", message=".*Transformer2DModelOutput.*", category=FutureWarning
+)
+warnings.filterwarnings("ignore", message=".*VQEncoderOutput.*", category=FutureWarning)
+warnings.filterwarnings("ignore", message=".*VQModel.*", category=FutureWarning)
+# Suppress transformers attention deprecation warnings
+warnings.filterwarnings(
+    "ignore",
+    message=".*was not found in transformers version.*",
+    category=FutureWarning,
+)
+warnings.filterwarnings(
+    "ignore", message=".*You are using a model.*", category=UserWarning
+)
+
 import torch
 import torchaudio
-from chatterbox.tts import ChatterboxTTS
+
+try:
+    from chatterbox.tts import ChatterboxTTS
+
+    CHATTERBOX_AVAILABLE = True
+except ImportError:
+    CHATTERBOX_AVAILABLE = False
+    ChatterboxTTS = None
 
 logger = logging.getLogger(__name__)
 
@@ -118,12 +153,76 @@ class ChatterboxService:
         if self._model_loaded and self.model is not None:
             return self.model
 
+        if not CHATTERBOX_AVAILABLE:
+            raise ImportError(
+                "Chatterbox TTS is not installed. Please install with: pip install chatterbox-tts"
+            )
+
         try:
             logger.info(f"Loading Chatterbox TTS model on {self.device}...")
             start_time = time.time()
 
-            # Load model with proper device mapping
-            self.model = ChatterboxTTS.from_pretrained(device=self.device)
+            # Suppress deprecation warnings during model loading
+            with suppress_model_warnings():
+                # Load model with proper device mapping and CUDA compatibility
+                try:
+                    if self.device == "cuda" and torch.cuda.is_available():
+                        logger.info(f"Loading Chatterbox TTS with CUDA support")
+                        # Use modern PyTorch attention implementation during model loading
+                        try:
+                            with torch.backends.cuda.sdp_kernel(
+                                enable_flash=True,
+                                enable_math=True,
+                                enable_mem_efficient=True,
+                            ):
+                                self.model = ChatterboxTTS.from_pretrained(
+                                    device="cuda"
+                                )
+                        except (AttributeError, RuntimeError):
+                            # Fallback without SDPA if not supported
+                            self.model = ChatterboxTTS.from_pretrained(device="cuda")
+                    else:
+                        logger.info(f"Loading Chatterbox TTS on CPU")
+                        # Force CPU loading with map_location to avoid CUDA deserialization issues
+                        original_load = torch.load
+
+                        def patched_load(*args, **kwargs):
+                            kwargs["map_location"] = "cpu"
+                            return original_load(*args, **kwargs)
+
+                        torch.load = patched_load
+                        try:
+                            self.model = ChatterboxTTS.from_pretrained(device="cpu")
+                        finally:
+                            torch.load = original_load
+
+                        self.device = "cpu"
+
+                except Exception as device_error:
+                    logger.warning(f"Failed to load on {self.device}: {device_error}")
+
+                    # Force CPU fallback with explicit map_location patching
+                    if self.device == "cuda":
+                        logger.info(
+                            "Attempting CPU fallback with map_location patching..."
+                        )
+                        original_load = torch.load
+
+                        def patched_load(*args, **kwargs):
+                            kwargs["map_location"] = "cpu"
+                            return original_load(*args, **kwargs)
+
+                        torch.load = patched_load
+                        try:
+                            self.model = ChatterboxTTS.from_pretrained(device="cpu")
+                            self.device = "cpu"
+                            logger.info(
+                                "Successfully loaded model on CPU with map_location patching"
+                            )
+                        finally:
+                            torch.load = original_load
+                    else:
+                        raise device_error
 
             load_time = time.time() - start_time
             self.sample_rate = self.model.sr
@@ -137,21 +236,7 @@ class ChatterboxService:
             return self.model
 
         except Exception as e:
-            logger.error(f"Failed to load Chatterbox TTS model on {self.device}: {e}")
-
-            # If CUDA fails, try fallback to CPU
-            if self.device == "cuda":
-                logger.info("Attempting fallback to CPU...")
-                try:
-                    self.device = "cpu"
-                    self.model = ChatterboxTTS.from_pretrained(device=self.device)
-                    self.sample_rate = self.model.sr
-                    self._model_loaded = True
-                    logger.info(f"Successfully loaded model on CPU fallback")
-                    return self.model
-                except Exception as cpu_error:
-                    logger.error(f"CPU fallback also failed: {cpu_error}")
-
+            logger.error(f"Failed to load Chatterbox TTS model: {e}")
             self._model_loaded = False
             raise
 
@@ -201,11 +286,38 @@ class ChatterboxService:
 
             start_time = time.time()
 
-            # Generate audio using Chatterbox
-            if audio_prompt_path:
-                wav = model.generate(text, audio_prompt_path=audio_prompt_path)
-            else:
-                wav = model.generate(text)
+            # Suppress warnings during generation
+            with suppress_model_warnings():
+                # Generate audio using Chatterbox with modern attention
+                if self.device == "cuda" and torch.cuda.is_available():
+                    # Use modern PyTorch attention for CUDA (updated syntax for PyTorch 2.7+)
+                    try:
+                        # Use the modern SDPA context manager
+                        with torch.backends.cuda.sdp_kernel(
+                            enable_flash=True,
+                            enable_math=True,
+                            enable_mem_efficient=True,
+                        ):
+                            if audio_prompt_path:
+                                wav = model.generate(
+                                    text, audio_prompt_path=audio_prompt_path
+                                )
+                            else:
+                                wav = model.generate(text)
+                    except (AttributeError, ImportError):
+                        # Fallback for older PyTorch versions or missing SDPA
+                        if audio_prompt_path:
+                            wav = model.generate(
+                                text, audio_prompt_path=audio_prompt_path
+                            )
+                        else:
+                            wav = model.generate(text)
+                else:
+                    # CPU generation
+                    if audio_prompt_path:
+                        wav = model.generate(text, audio_prompt_path=audio_prompt_path)
+                    else:
+                        wav = model.generate(text)
 
             processing_time = time.time() - start_time
 

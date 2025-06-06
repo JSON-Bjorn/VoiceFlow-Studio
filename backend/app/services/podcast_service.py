@@ -5,7 +5,6 @@ from ..models.podcast import Podcast, PodcastStatus
 from ..models.user import User
 from ..schemas.podcast import PodcastCreate, PodcastUpdate, PodcastSummary
 from ..services.credit_service import CreditService
-from ..models.credit_transaction import TransactionType
 import math
 
 
@@ -41,7 +40,6 @@ class PodcastService:
             user_id=user_id,
             amount=1,
             description=f"Created podcast: {podcast_data.title}",
-            transaction_type=TransactionType.USAGE,
         )
 
         self.db.commit()
@@ -161,3 +159,31 @@ class PodcastService:
             .limit(limit)
             .all()
         )
+
+    def update_podcast_status(
+        self, podcast_id: int, status: str, user_id: Optional[int] = None
+    ) -> bool:
+        """Update podcast status (for internal use)"""
+        query = self.db.query(Podcast).filter(Podcast.id == podcast_id)
+
+        # If user_id is provided, ensure the podcast belongs to the user
+        if user_id is not None:
+            query = query.filter(Podcast.user_id == user_id)
+
+        podcast = query.first()
+        if not podcast:
+            return False
+
+        # Convert string status to enum if needed
+        if isinstance(status, str):
+            try:
+                status_enum = PodcastStatus(status.lower())
+                podcast.status = status_enum
+            except ValueError:
+                # If status string doesn't match enum, treat as raw string
+                podcast.status = status
+        else:
+            podcast.status = status
+
+        self.db.commit()
+        return True

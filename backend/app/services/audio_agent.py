@@ -490,16 +490,83 @@ class AudioAgent:
                     logger.warning(f"No file path for segment {segment_id}")
                     continue
 
-                # Load audio data from storage
-                audio_data = await storage_service.get_audio_file(file_path)
+                # Load audio data from storage - handle both old and new path formats
+                audio_data = None
+
+                # Try the file path as-is first (new format)
+                try:
+                    audio_data = await storage_service.get_audio_file(file_path)
+                except Exception as e:
+                    logger.debug(f"Failed to load {file_path} as storage path: {e}")
+
+                # If that fails, try converting old format to new format
+                if not audio_data and file_path.startswith("storage/"):
+                    # Convert old format "storage/audio/segments/filename.wav" to "audio/segments/filename.wav"
+                    new_path = file_path.replace("storage/", "", 1)
+                    try:
+                        audio_data = await storage_service.get_audio_file(new_path)
+                        logger.info(f"Found file using converted path: {new_path}")
+                    except Exception as e:
+                        logger.debug(f"Failed to load {new_path} as storage path: {e}")
+
+                # If still no data, try direct filesystem access (legacy support)
                 if not audio_data:
-                    logger.warning(f"Could not load audio data for {file_path}")
+                    import os
+                    from pathlib import Path
+
+                    # Try absolute path
+                    if os.path.exists(file_path):
+                        try:
+                            with open(file_path, "rb") as f:
+                                audio_data = f.read()
+                            logger.info(
+                                f"Found file using direct filesystem access: {file_path}"
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to read file directly: {e}")
+
+                    # Try relative to current directory
+                    elif os.path.exists(f"./{file_path}"):
+                        try:
+                            with open(f"./{file_path}", "rb") as f:
+                                audio_data = f.read()
+                            logger.info(
+                                f"Found file using relative path: ./{file_path}"
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to read relative file: {e}")
+
+                if not audio_data:
+                    logger.error(
+                        f"Could not load audio data for {file_path} using any method"
+                    )
                     continue
 
-                # Convert to AudioSegment
-                audio_segment = AudioSegment.from_file(
-                    io.BytesIO(audio_data), format="mp3"
-                )
+                # Convert to AudioSegment - auto-detect format from file extension
+                try:
+                    if file_path.lower().endswith(".wav"):
+                        audio_segment = AudioSegment.from_file(
+                            io.BytesIO(audio_data), format="wav"
+                        )
+                    elif file_path.lower().endswith(".mp3"):
+                        audio_segment = AudioSegment.from_file(
+                            io.BytesIO(audio_data), format="mp3"
+                        )
+                    elif file_path.lower().endswith(".m4a"):
+                        audio_segment = AudioSegment.from_file(
+                            io.BytesIO(audio_data), format="m4a"
+                        )
+                    else:
+                        # Try to auto-detect format
+                        logger.debug(
+                            f"Unknown format for {file_path}, trying auto-detection"
+                        )
+                        audio_segment = AudioSegment.from_file(io.BytesIO(audio_data))
+                except Exception as format_error:
+                    logger.error(
+                        f"Failed to load audio format for {file_path}: {format_error}"
+                    )
+                    continue
 
                 # Create segment info
                 segment_info = AudioSegmentInfo(

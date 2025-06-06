@@ -174,7 +174,9 @@ async def generate_complete_podcast(
             )
 
         # Update podcast status to generating
-        podcast_service.update_podcast_status(request.podcast_id, "generating")
+        podcast_service.update_podcast_status(
+            request.podcast_id, "generating", current_user.id
+        )
 
         # Start generation in background
         orchestrator = ConversationOrchestrator(db)
@@ -304,7 +306,7 @@ async def generate_enhanced_podcast(
     try:
         # Verify the podcast exists and belongs to the user
         podcast_service = PodcastService(db)
-        podcast = podcast_service.get_podcast_by_id(request.podcast_id)
+        podcast = podcast_service.get_podcast_by_id(request.podcast_id, current_user.id)
 
         if not podcast:
             raise HTTPException(
@@ -317,7 +319,9 @@ async def generate_enhanced_podcast(
             )
 
         # Update podcast status to generating
-        podcast_service.update_podcast_status(request.podcast_id, "generating")
+        podcast_service.update_podcast_status(
+            request.podcast_id, "generating", current_user.id
+        )
 
         # Initialize Enhanced Pipeline Orchestrator
         enhanced_orchestrator = EnhancedPipelineOrchestrator(db)
@@ -330,6 +334,7 @@ async def generate_enhanced_podcast(
             "topic": podcast.topic,
             "target_duration": podcast.length,
             "generate_voice": custom_settings.get("generate_voice", False),
+            "assemble_audio": custom_settings.get("assemble_audio", True),
             "hosts": custom_settings.get(
                 "hosts",
                 {
@@ -361,6 +366,21 @@ async def generate_enhanced_podcast(
                     "target_audience": "general public",
                 },
             ),
+            "audio_options": custom_settings.get(
+                "audio_options",
+                {
+                    "add_intro": True,
+                    "add_outro": True,
+                    "intro_style": "overlay",
+                    "outro_style": "overlay",
+                    "intro_asset_id": "default_intro",
+                    "outro_asset_id": "default_outro",
+                    "add_transitions": False,
+                    "transition_asset_id": "default_transition",
+                    "add_background_music": False,
+                    "background_asset_id": "",
+                },
+            ),
         }
 
         # Start enhanced generation
@@ -370,6 +390,7 @@ async def generate_enhanced_podcast(
 
         generation_result = await enhanced_orchestrator.generate_enhanced_podcast(
             podcast_id=request.podcast_id,
+            user_id=current_user.id,
             user_inputs=user_inputs,
             progress_callback=None,  # Could implement WebSocket progress updates later
             quality_settings=custom_settings.get("quality_settings"),
@@ -400,7 +421,9 @@ async def generate_enhanced_podcast(
 
         # Update podcast status to failed
         try:
-            podcast_service.update_podcast_status(request.podcast_id, "failed")
+            podcast_service.update_podcast_status(
+                request.podcast_id, "failed", current_user.id
+            )
         except Exception as update_error:
             logger.error(f"Failed to update podcast status: {update_error}")
 

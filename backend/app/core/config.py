@@ -3,8 +3,69 @@ Configuration settings for VoiceFlow Studio Backend
 """
 
 import os
+import warnings
 from typing import Optional
+from contextlib import contextmanager
 from pydantic_settings import BaseSettings
+
+
+# Configure warnings suppression for deprecated dependencies
+def configure_warnings():
+    """Configure warning filters for dependencies"""
+    # Suppress specific deprecation warnings
+    warnings.filterwarnings("ignore", category=FutureWarning, module="diffusers")
+    warnings.filterwarnings(
+        "ignore", message=".*LoRACompatibleLinear.*", category=FutureWarning
+    )
+    warnings.filterwarnings(
+        "ignore", message=".*torch.backends.cuda.sdp_kernel.*", category=FutureWarning
+    )
+    warnings.filterwarnings(
+        "ignore", message=".*scaled_dot_product_attention.*", category=UserWarning
+    )
+
+    # Suppress diffusers v0.29+ deprecation warnings
+    warnings.filterwarnings(
+        "ignore", message=".*Transformer2DModelOutput.*", category=FutureWarning
+    )
+    warnings.filterwarnings(
+        "ignore", message=".*VQEncoderOutput.*", category=FutureWarning
+    )
+    warnings.filterwarnings("ignore", message=".*VQModel.*", category=FutureWarning)
+
+    # Suppress transformers attention deprecation warnings
+    warnings.filterwarnings(
+        "ignore",
+        message=".*was not found in transformers version.*",
+        category=FutureWarning,
+    )
+    warnings.filterwarnings(
+        "ignore", message=".*You are using a model.*", category=UserWarning
+    )
+
+    # Suppress PyTorch 2.7+ compatibility warnings
+    warnings.filterwarnings(
+        "ignore", message=".*torch.nn.attention.*", category=FutureWarning
+    )
+    warnings.filterwarnings(
+        "ignore",
+        message=".*torch.nn.functional.scaled_dot_product_attention.*",
+        category=UserWarning,
+    )
+
+
+# Apply warning configuration
+configure_warnings()
+
+
+@contextmanager
+def suppress_model_warnings():
+    """Context manager to suppress model loading and generation warnings"""
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=FutureWarning)
+        warnings.filterwarnings("ignore", category=UserWarning)
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        yield
 
 
 class Settings(BaseSettings):

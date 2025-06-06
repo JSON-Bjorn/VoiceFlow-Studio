@@ -2,6 +2,21 @@
 
 This guide covers all configuration requirements for VoiceFlow Studio.
 
+## Recent Updates - Deprecation Warnings Fixed
+
+### Version 2.1.0 Updates
+**Resolved Deprecation Warnings:**
+- ✅ Fixed `LoRACompatibleLinear` deprecation by adding PEFT backend support
+- ✅ Updated PyTorch attention mechanisms (replaced `torch.backends.cuda.sdp_kernel`)
+- ✅ Added modern `torch.nn.attention.sdpa_kernel` support
+- ✅ Upgraded dependencies to latest compatible versions
+
+**To apply these fixes:**
+```bash
+cd backend
+python upgrade_dependencies.py
+```
+
 ## Environment Variables
 
 ### Database Configuration (Required)

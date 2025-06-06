@@ -24,7 +24,14 @@ export default function LoginPage() {
         setError('')
 
         try {
-            await api.login(formData)
+            const response = await api.login(formData)
+            console.log('Login successful, token received:', response.access_token ? 'Yes' : 'No')
+            console.log('Token length:', response.access_token?.length || 0)
+
+            // Verify token is in localStorage
+            const storedToken = localStorage.getItem('access_token')
+            console.log('Token stored in localStorage:', storedToken ? 'Yes' : 'No')
+
             // Redirect to dashboard on successful login
             router.push('/dashboard')
         } catch (err) {

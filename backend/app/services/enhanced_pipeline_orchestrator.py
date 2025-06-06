@@ -2,9 +2,11 @@ from typing import Dict, List, Optional, Any, Callable
 from datetime import datetime
 import logging
 import asyncio
+import time
 from .websocket_manager import websocket_manager
 from ..models.podcast import Podcast
 from ..services.podcast_service import PodcastService
+from ..schemas.podcast import PodcastUpdate
 from .research_agent import ResearchAgent
 from .script_agent import ScriptAgent
 from .content_planning_agent import ContentPlanningAgent
@@ -91,6 +93,7 @@ class EnhancedPipelineOrchestrator:
     async def generate_enhanced_podcast(
         self,
         podcast_id: int,
+        user_id: int,
         user_inputs: Dict[str, Any],
         progress_callback: Optional[Callable] = None,
         quality_settings: Optional[Dict] = None,
@@ -101,7 +104,7 @@ class EnhancedPipelineOrchestrator:
         logger.info(f"Starting enhanced podcast generation for ID: {podcast_id}")
 
         # Get podcast and user info for WebSocket updates
-        podcast = self.podcast_service.get_podcast_by_id(podcast_id)
+        podcast = self.podcast_service.get_podcast_by_id(podcast_id, user_id)
         if not podcast:
             raise ValueError(f"Podcast with ID {podcast_id} not found")
 
@@ -137,6 +140,15 @@ class EnhancedPipelineOrchestrator:
             )
 
         try:
+            # Create debug file to track pipeline start
+            import time
+
+            pipeline_debug = f"pipeline_start_{int(time.time())}.txt"
+            with open(pipeline_debug, "w") as f:
+                f.write(f"Enhanced pipeline started at {time.time()}\n")
+                f.write(f"user_inputs: {user_inputs}\n")
+                f.write(f"generate_voice: {user_inputs.get('generate_voice')}\n")
+
             # Phase 1: Enhanced Research with Error Recovery
             await send_progress("research", 10, "Conducting contextual research")
             research_result = await self._execute_with_recovery(
@@ -208,10 +220,29 @@ class EnhancedPipelineOrchestrator:
 
             # Phase 4: Voice Generation with Circuit Breaker Protection
             voice_result = None
-            if (
-                user_inputs.get("generate_voice", False)
-                and self.voice_agent.is_available()
-            ):
+            generate_voice_enabled = user_inputs.get("generate_voice", False)
+            voice_agent_available = self.voice_agent.is_available()
+
+            # Create debug file to track condition check
+            import time
+
+            debug_file = f"voice_condition_check_{int(time.time())}.txt"
+            with open(debug_file, "w") as f:
+                f.write(f"Voice condition check at {time.time()}\n")
+                f.write(f"user_inputs keys: {list(user_inputs.keys())}\n")
+                f.write(f"generate_voice value: {user_inputs.get('generate_voice')}\n")
+                f.write(f"generate_voice_enabled: {generate_voice_enabled}\n")
+                f.write(f"voice_agent_available: {voice_agent_available}\n")
+                f.write(
+                    f"condition result: {generate_voice_enabled and voice_agent_available}\n"
+                )
+
+            logger.info(
+                f"Voice generation check: generate_voice={generate_voice_enabled}, voice_agent_available={voice_agent_available}"
+            )
+
+            if generate_voice_enabled and voice_agent_available:
+                logger.info("Starting voice generation phase")
                 await send_progress("voice_generation", 65, "Generating voice audio")
                 try:
                     voice_result = await self._execute_with_recovery(
@@ -223,6 +254,9 @@ class EnhancedPipelineOrchestrator:
                         generation_state,
                         send_progress,
                     )
+                    logger.info(
+                        f"Voice generation result: success={voice_result.get('success') if voice_result else None}"
+                    )
                 except Exception as e:
                     # Voice generation failure is non-critical, continue without voice
                     logger.warning(
@@ -231,9 +265,22 @@ class EnhancedPipelineOrchestrator:
                     await send_progress(
                         "voice_generation", 65, "Voice generation skipped due to error"
                     )
+            else:
+                logger.warning(
+                    f"Voice generation skipped: generate_voice={generate_voice_enabled}, voice_agent_available={voice_agent_available}"
+                )
 
             # Phase 5: Audio Assembly with Error Recovery
             audio_result = None
+            logger.info(f"Checking audio assembly conditions:")
+            logger.info(
+                f"  - voice_result success: {voice_result and voice_result.get('success')}"
+            )
+            logger.info(f"  - audio_agent available: {self.audio_agent.is_available()}")
+            logger.info(
+                f"  - assemble_audio setting: {user_inputs.get('assemble_audio', True)}"
+            )
+
             if (
                 voice_result
                 and voice_result["success"]
@@ -243,6 +290,7 @@ class EnhancedPipelineOrchestrator:
                 await send_progress(
                     "audio_assembly", 75, "Assembling final audio episode"
                 )
+                logger.info("Starting audio assembly phase - all conditions met")
                 try:
                     audio_result = await self._execute_with_recovery(
                         self._audio_assembly_phase,
@@ -252,6 +300,9 @@ class EnhancedPipelineOrchestrator:
                         user_inputs,
                         generation_state,
                     )
+                    logger.info(
+                        f"Audio assembly result: success={audio_result.get('success') if audio_result else None}"
+                    )
                 except Exception as e:
                     logger.warning(
                         f"Audio assembly failed, continuing without assembled audio: {e}"
@@ -259,6 +310,14 @@ class EnhancedPipelineOrchestrator:
                     await send_progress(
                         "audio_assembly", 75, "Audio assembly skipped due to error"
                     )
+            else:
+                logger.warning("Audio assembly skipped - conditions not met")
+                if not voice_result or not voice_result.get("success"):
+                    logger.warning("  - Voice generation was not successful")
+                if not self.audio_agent.is_available():
+                    logger.warning("  - Audio agent not available (PyDub missing?)")
+                if not user_inputs.get("assemble_audio", True):
+                    logger.warning("  - Audio assembly disabled in user inputs")
 
             # Phase 6: Final Quality Validation and Optimization
             await send_progress("validation", 85, "Final quality validation")
@@ -273,6 +332,7 @@ class EnhancedPipelineOrchestrator:
             await send_progress("saving", 95, "Saving optimized content")
             save_result = await self._save_enhanced_results(
                 podcast_id,
+                user_id,
                 research_result["data"],
                 planning_result["data"],
                 script_result["data"],
@@ -347,7 +407,7 @@ class EnhancedPipelineOrchestrator:
             )
 
             return await self._handle_generation_failure(
-                podcast_id, str(e), generation_state, error_details
+                podcast_id, user_id, str(e), generation_state, error_details
             )
 
     def _initialize_enhanced_state(
@@ -580,20 +640,27 @@ class EnhancedPipelineOrchestrator:
                         f"Script generation iteration {iteration + 1}/{max_iterations}",
                     )
 
-                # Generate script
-                script_result = await self.script_agent.generate_enhanced_script(
+                # Generate script (adapting to ScriptAgent's method signature)
+                script_data = self.script_agent.generate_script(
                     research_data=research_data,
-                    content_plan=content_plan,
-                    user_inputs=user_inputs,
-                    iteration=iteration,
-                    feedback_from_previous=generation_state.get("script_feedback"),
+                    target_length=user_inputs.get("target_duration", 10),
+                    host_personalities=user_inputs.get("hosts"),
+                    style_preferences=user_inputs.get("style_preferences"),
                 )
+
+                script_result = {
+                    "success": script_data is not None,
+                    "data": script_data,
+                    "error": "Script generation failed"
+                    if script_data is None
+                    else None,
+                }
 
                 if not script_result["success"]:
                     continue
 
                 # Quality validation
-                quality_scores = await self._validate_script_quality(
+                quality_scores = self._validate_script_quality(
                     script_result["data"], user_inputs, generation_state
                 )
 
@@ -622,6 +689,27 @@ class EnhancedPipelineOrchestrator:
             logger.error(f"Error in iterative script generation: {e}")
             return {"success": False, "error": str(e)}
 
+    def _validate_script_quality(
+        self,
+        script_data: Dict[str, Any],
+        user_inputs: Dict[str, Any],
+        generation_state: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Basic script quality validation"""
+        if not script_data:
+            return {"overall_score": 0.0, "feedback": {"error": "No script data"}}
+
+        # Use ScriptAgent's built-in validation
+        validation_result = self.script_agent.validate_script(script_data)
+
+        # Return adapted quality scores
+        return {
+            "overall_score": validation_result.get("quality_score", 0.0)
+            / 100.0,  # Convert to 0-1 scale
+            "feedback": validation_result,
+            "is_valid": validation_result.get("is_valid", False),
+        }
+
     async def _voice_generation_phase(
         self,
         script_data: Dict[str, Any],
@@ -643,6 +731,14 @@ class EnhancedPipelineOrchestrator:
         try:
             logger.info("Starting voice generation phase")
 
+            # Create a debug marker file to prove this method was called
+            import time
+
+            debug_marker = f"voice_generation_called_{int(time.time())}.txt"
+            with open(debug_marker, "w") as f:
+                f.write(f"Voice generation phase called at {time.time()}")
+            logger.info(f"Created debug marker: {debug_marker}")
+
             # Check if voice agent is available
             if not self.voice_agent.is_available():
                 return {
@@ -652,9 +748,16 @@ class EnhancedPipelineOrchestrator:
                 }
 
             # Extract script segments for voice generation
+            logger.info(
+                f"Extracting voice segments from script_data with keys: {list(script_data.keys())}"
+            )
             script_segments = self._extract_voice_segments(script_data, user_inputs)
+            logger.info(f"Extracted {len(script_segments)} voice segments")
 
             if not script_segments:
+                logger.error(
+                    f"No voice segments extracted from script_data: {script_data}"
+                )
                 return {
                     "success": False,
                     "error": "No valid script segments found for voice generation",
@@ -671,13 +774,9 @@ class EnhancedPipelineOrchestrator:
 
             # Generate voice segments
             voice_result = await self.voice_agent.generate_voice_segments(
-                script_segments,
-                context={
-                    "podcast_id": generation_state["podcast_id"],
-                    "generation_id": generation_state["id"],
-                    "user_inputs": user_inputs,
-                },
-                podcast_id=str(generation_state["podcast_id"]),
+                script_segments=script_segments,
+                voice_settings=user_inputs.get("voice_settings"),
+                include_cost_estimate=True,
             )
 
             if voice_result.success:
@@ -690,28 +789,36 @@ class EnhancedPipelineOrchestrator:
                 voice_data = {
                     "segments": [
                         {
-                            "segment_id": seg.segment_id,
-                            "text": seg.text,
-                            "speaker": seg.speaker,
-                            "voice_id": seg.voice_id,
-                            "duration_estimate": seg.duration_estimate,
-                            "character_count": seg.character_count,
-                            "audio_size_bytes": len(seg.audio_data),
-                            "file_path": seg.file_path,
-                            "file_url": seg.file_url,
-                            "timestamp": seg.timestamp.isoformat(),
+                            "segment_id": seg.get(
+                                "segment_id", f"seg_{seg.get('segment_index', i)}"
+                            ),
+                            "text": seg.get("text", ""),
+                            "speaker": seg.get("speaker", seg.get("speaker_id", "")),
+                            "voice_id": seg.get("voice_id", ""),
+                            "duration_estimate": seg.get(
+                                "duration_estimate", seg.get("duration", 0)
+                            ),
+                            "character_count": seg.get(
+                                "character_count", len(seg.get("text", ""))
+                            ),
+                            "audio_size_bytes": len(seg.get("audio_data", b"")),
+                            "file_path": seg.get("file_path", ""),
+                            "file_url": seg.get("file_url", ""),
+                            "timestamp": seg.get("timestamp", time.time()),
                         }
-                        for seg in voice_result.segments
+                        for i, seg in enumerate(voice_result.audio_segments)
                     ],
                     "total_duration": voice_result.total_duration,
-                    "total_characters": voice_result.total_characters,
+                    "total_characters": sum(
+                        len(seg.get("text", "")) for seg in voice_result.audio_segments
+                    ),
                     "total_cost": voice_result.total_cost,
-                    "generation_time": voice_result.generation_time,
-                    "segments_count": len(voice_result.segments),
+                    "generation_time": voice_result.processing_time,
+                    "segments_count": len(voice_result.audio_segments),
                 }
 
                 logger.info(
-                    f"Voice generation completed: {len(voice_result.segments)} segments, {voice_result.total_duration:.1f}s total"
+                    f"Voice generation completed: {len(voice_result.audio_segments)} segments, {voice_result.total_duration:.1f}s total"
                 )
 
                 return {
@@ -757,36 +864,64 @@ class EnhancedPipelineOrchestrator:
 
             for segment in script_segments:
                 # Skip non-dialogue segments
-                if segment.get("type") not in ["dialogue", "main_content"]:
+                if segment.get("type") not in [
+                    "intro",
+                    "dialogue",
+                    "main_content",
+                    "outro",
+                ]:
                     continue
 
-                # Extract speaker and text
-                speaker = segment.get("speaker", "host_1")
-                text = segment.get("text", "").strip()
+                # Extract dialogue items from segment
+                dialogue_items = segment.get("dialogue", [])
 
-                # Skip empty or very short segments
-                if len(text) < 10:
-                    continue
+                # If no dialogue array, try to extract from segment directly
+                if not dialogue_items:
+                    speaker = segment.get("speaker", "host_1")
+                    text = segment.get("text", "").strip()
+                    if text and len(text) >= 10:
+                        dialogue_items = [{"speaker": speaker, "text": text}]
 
-                # Map speaker to voice configuration
-                if speaker in hosts_config:
-                    host_config = hosts_config[speaker]
-                    # Use configured voice_id if available
-                    voice_id = host_config.get("voice_id")
-                else:
-                    # Use default mapping
+                # Process each dialogue item
+                for dialogue_item in dialogue_items:
+                    speaker = dialogue_item.get("speaker", "host_1")
+                    text = dialogue_item.get("text", "").strip()
+
+                    # Skip empty or very short segments
+                    if len(text) < 10:
+                        continue
+
+                    # Map speaker to voice configuration
                     voice_id = None
+                    host_config = None
 
-                voice_segments.append(
-                    {
-                        "text": text,
-                        "speaker": speaker,
-                        "voice_id": voice_id,
-                        "segment_type": segment.get("type", "dialogue"),
-                        "subtopic": segment.get("subtopic", ""),
-                        "original_segment": segment,
-                    }
-                )
+                    # First try direct speaker name lookup
+                    if speaker in hosts_config:
+                        host_config = hosts_config[speaker]
+                        voice_id = host_config.get("voice_id")
+                    else:
+                        # Try to find speaker by name in host configurations
+                        for host_key, host_data in hosts_config.items():
+                            if host_data.get("name") == speaker:
+                                host_config = host_data
+                                voice_id = host_data.get("voice_id")
+                                break
+
+                    # If still no match, use default mapping
+                    if not host_config:
+                        voice_id = None
+
+                    voice_segments.append(
+                        {
+                            "text": text,
+                            "speaker": speaker,
+                            "voice_id": voice_id,
+                            "segment_type": segment.get("type", "dialogue"),
+                            "subtopic": segment.get("subtopic", ""),
+                            "original_segment": segment,
+                            "original_dialogue_item": dialogue_item,
+                        }
+                    )
 
             logger.info(f"Extracted {len(voice_segments)} voice segments from script")
             return voice_segments
@@ -978,6 +1113,7 @@ class EnhancedPipelineOrchestrator:
     async def _handle_generation_failure(
         self,
         podcast_id: int,
+        user_id: int,
         error: str,
         generation_state: Dict[str, Any],
         error_details: Optional[Any] = None,
@@ -985,7 +1121,7 @@ class EnhancedPipelineOrchestrator:
         """Enhanced generation failure handling with detailed error information"""
 
         try:
-            self.podcast_service.update_podcast_status(podcast_id, "failed")
+            self.podcast_service.update_podcast_status(podcast_id, "failed", user_id)
         except Exception as update_error:
             logger.error(f"Failed to update podcast status: {update_error}")
 
@@ -1017,6 +1153,7 @@ class EnhancedPipelineOrchestrator:
     async def _save_enhanced_results(
         self,
         podcast_id: int,
+        user_id: int,
         research_data: Dict[str, Any],
         content_plan: Dict[str, Any],
         script_data: Dict[str, Any],
@@ -1045,22 +1182,93 @@ class EnhancedPipelineOrchestrator:
                 ),
             }
 
-            # Update podcast
+            # Prepare audio data for database update
+            audio_url = None
+            audio_file_paths = []
+            has_audio = False
+            audio_segments_count = 0
+            audio_total_duration = 0
+            voice_generation_cost = None
+
+            # Process voice generation results
+            if (
+                voice_result
+                and voice_result.get("success")
+                and voice_result.get("data")
+            ):
+                voice_data = voice_result["data"]
+
+                # Extract voice segments file paths
+                voice_segments = voice_data.get("segments", [])
+                for segment in voice_segments:
+                    if segment.get("file_path"):
+                        audio_file_paths.append(segment["file_path"])
+
+                audio_segments_count = len(voice_segments)
+                audio_total_duration = voice_data.get("total_duration", 0)
+                voice_generation_cost = str(voice_data.get("total_cost", 0))
+
+            # Process audio assembly results (final podcast episode)
+            if (
+                audio_result
+                and audio_result.get("success")
+                and audio_result.get("data")
+            ):
+                audio_data = audio_result["data"]
+
+                # Add the final assembled audio file path
+                if audio_data.get("final_audio_path"):
+                    audio_file_paths.append(audio_data["final_audio_path"])
+                    audio_url = audio_data.get("final_audio_url")
+                    has_audio = True
+
+                    # Use assembly duration if available, otherwise use voice duration
+                    if audio_data.get("total_duration"):
+                        audio_total_duration = audio_data["total_duration"]
+
+            elif voice_result and voice_result.get("success"):
+                # We have voice segments but no assembled episode
+                has_audio = len(audio_file_paths) > 0
+
+            # Update podcast with all data including audio information
+            update_data = PodcastUpdate(
+                script=script_text,
+                status="completed",
+                audio_url=audio_url,
+                has_audio=has_audio,
+                audio_file_paths=audio_file_paths if audio_file_paths else None,
+                audio_segments_count=audio_segments_count
+                if audio_segments_count > 0
+                else None,
+                audio_total_duration=audio_total_duration
+                if audio_total_duration > 0
+                else None,
+                voice_generation_cost=voice_generation_cost,
+            )
+
             updated_podcast = self.podcast_service.update_podcast(
                 podcast_id=podcast_id,
-                updates={
-                    "script": script_text,
-                    "status": "completed",
-                    # Could add metadata field to store full generation data
-                },
+                user_id=user_id,
+                update_data=update_data,
             )
 
             generation_state["phases_completed"].append("save_enhanced_results")
+
+            logger.info(
+                f"Saved podcast results: has_audio={has_audio}, file_paths={len(audio_file_paths)}, duration={audio_total_duration}s"
+            )
 
             return {
                 "success": True,
                 "podcast": updated_podcast,
                 "saved_metadata": metadata,
+                "audio_info": {
+                    "has_audio": has_audio,
+                    "audio_url": audio_url,
+                    "file_paths_count": len(audio_file_paths),
+                    "segments_count": audio_segments_count,
+                    "total_duration": audio_total_duration,
+                },
             }
 
         except Exception as e:
@@ -1307,14 +1515,19 @@ class EnhancedPipelineOrchestrator:
             ]
             generation_state["quality_thresholds"]["minimum_script_quality"] = 0.6
 
-            # Generate basic script
-            script_result = await self.script_agent.generate_enhanced_script(
+            # Generate basic script (adapting to ScriptAgent's method signature)
+            script_data = self.script_agent.generate_script(
                 research_data=research_data,
-                content_plan=content_plan,
-                user_inputs=user_inputs,
-                iteration=0,
-                simplified_mode=True,
+                target_length=user_inputs.get("target_duration", 10),
+                host_personalities=user_inputs.get("hosts"),
+                style_preferences=user_inputs.get("style_preferences"),
             )
+
+            script_result = {
+                "success": script_data is not None,
+                "data": script_data,
+                "error": "Script generation failed" if script_data is None else None,
+            }
 
             # Restore original threshold
             generation_state["quality_thresholds"]["minimum_script_quality"] = (

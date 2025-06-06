@@ -20,7 +20,9 @@ import {
     Clock,
     X,
     Play,
-    Pause
+    Pause,
+    ArrowLeft,
+    AlertCircle
 } from 'lucide-react';
 import {
     Podcast,
@@ -59,6 +61,8 @@ export default function PodcastLibrary() {
     const [searchTerm, setSearchTerm] = useState('');
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [showGenerationOptions, setShowGenerationOptions] = useState<number | null>(null);
+    const [showCreditConfirmation, setShowCreditConfirmation] = useState(false);
+    const [pendingPodcastData, setPendingPodcastData] = useState<PodcastCreate | null>(null);
 
     // Queue management state
     const [generationQueue, setGenerationQueue] = useState<GenerationQueueItem[]>([]);
@@ -75,7 +79,8 @@ export default function PodcastLibrary() {
 
     // Generation options state
     const [generationOptions, setGenerationOptions] = useState({
-        generateVoice: false,
+        generateVoice: true,
+        assemble_audio: true,
         hostPersonalities: {
             host_1: { name: 'Felix', personality: 'analytical, thoughtful, engaging', role: 'primary_questioner' },
             host_2: { name: 'Bjorn', personality: 'warm, curious, conversational', role: 'storyteller' }
@@ -182,73 +187,52 @@ export default function PodcastLibrary() {
         loadData();
     }, [currentPage, statusFilter]);
 
-    // Create new podcast
+    // Auto-refresh data when there are active generations
+    useEffect(() => {
+        const activeGenerations = generationQueue.filter(item =>
+            item.status === 'active' || item.status === 'queued'
+        ).length;
+
+        if (activeGenerations > 0) {
+            const interval = setInterval(() => {
+                loadData(); // Refresh podcast data
+            }, 10000); // Every 10 seconds
+
+            return () => clearInterval(interval);
+        }
+    }, [generationQueue]);
+
+    // Create new podcast with confirmation
     const handleCreatePodcast = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newPodcast.title.trim() || !newPodcast.topic.trim()) return;
 
-        try {
-            setCreating(true);
-            const podcast = await api.createPodcast(newPodcast);
-            setPodcasts(prev => [podcast, ...prev]);
-            setNewPodcast({ title: '', topic: '', length: 10 });
-            setShowCreateForm(false);
-
-            // Refresh summary
-            const summaryResponse = await api.getPodcastSummary();
-            setSummary(summaryResponse);
-
-            // Refresh credit summary
-            const creditResponse = await api.getCreditSummary();
-            setCreditSummary(creditResponse);
-        } catch (error: any) {
-            alert(error.message || 'Failed to create podcast');
-        } finally {
-            setCreating(false);
-        }
+        // Store the podcast data and show credit confirmation
+        setPendingPodcastData({ ...newPodcast });
+        setShowCreateForm(false);
+        setShowCreditConfirmation(true);
     };
 
-    // Enhanced generation with queue management
-    const handleGenerateEnhanced = async (podcast: Podcast) => {
+    // Confirm and create podcast with immediate generation
+    const handleConfirmCreateAndGenerate = async () => {
+        if (!pendingPodcastData) return;
+
         try {
-            // Add to generation queue
-            const generationId = addToQueue(podcast.id, podcast.title);
-            setCurrentGenerationId(generationId);
-            setShowProgressModal(true);
-            setGenerating(podcast.id);
+            setCreating(true);
+            setShowCreditConfirmation(false);
 
-            // Start the generation process
-            const result = await api.generatePodcastWithAI(podcast.id, generationOptions);
+            // Create the podcast
+            const podcast = await api.createPodcast(pendingPodcastData);
+            setPodcasts(prev => [podcast, ...prev]);
 
-            if (result.success) {
-                // Update queue item as completed
-                updateQueueItem(generationId, {
-                    status: 'completed',
-                    progress: 100,
-                    result: result
-                });
+            // Clear form data
+            setNewPodcast({ title: '', topic: '', length: 10 });
+            setPendingPodcastData(null);
 
-                // Update the podcast in the list
-                setPodcasts(prev =>
-                    prev.map(p => p.id === podcast.id ? { ...p, status: 'completed' } : p)
-                );
+            // Start background generation immediately
+            startBackgroundGeneration(podcast);
 
-                // Show success message
-                const message = result.voice_generated
-                    ? `Podcast generated successfully with voice! Duration: ${result.total_duration?.toFixed(1)}s, Cost: $${result.cost_estimate?.toFixed(4)}`
-                    : 'Podcast script generated successfully!';
-
-                alert(message);
-            } else {
-                // Update queue item as error
-                updateQueueItem(generationId, {
-                    status: 'error',
-                    errorMessage: result.message || 'Generation failed'
-                });
-                alert(`Generation failed: ${result.message}`);
-            }
-
-            // Refresh data
+            // Refresh summaries
             const [summaryResponse, creditResponse] = await Promise.all([
                 api.getPodcastSummary(),
                 api.getCreditSummary()
@@ -257,18 +241,113 @@ export default function PodcastLibrary() {
             setCreditSummary(creditResponse);
 
         } catch (error: any) {
-            // Update queue item as error
-            if (currentGenerationId) {
-                updateQueueItem(currentGenerationId, {
-                    status: 'error',
-                    errorMessage: error.message || 'Generation failed'
-                });
-            }
-            alert(error.message || 'Failed to generate podcast');
+            alert(error.message || 'Failed to create podcast');
         } finally {
-            setGenerating(null);
-            setShowGenerationOptions(null);
+            setCreating(false);
         }
+    };
+
+    // Cancel creation
+    const handleCancelCreate = () => {
+        setShowCreditConfirmation(false);
+        setPendingPodcastData(null);
+        setShowCreateForm(true); // Go back to form
+    };
+
+    // Start background generation
+    const startBackgroundGeneration = async (podcast: Podcast) => {
+        // Add to generation queue
+        const generationId = addToQueue(podcast.id, podcast.title);
+        setCurrentGenerationId(generationId);
+        setShowProgressModal(true);
+
+        // Update podcast status to generating immediately
+        setPodcasts(prev => prev.map(p =>
+            p.id === podcast.id ? { ...p, status: 'generating' } : p
+        ));
+
+        // Start the generation process in background (don't await)
+        handleBackgroundGeneration(podcast, generationId);
+    };
+
+    // Handle background generation (async, doesn't block UI)
+    const handleBackgroundGeneration = async (podcast: Podcast, generationId: string) => {
+        try {
+            console.log('Starting background generation for podcast:', podcast.id);
+
+            // Start the generation process
+            const result = await api.generatePodcastWithAI(podcast.id, generationOptions);
+
+            console.log('Generation result received:', result);
+
+            if (result.success) {
+                console.log('Generation successful, updating UI state');
+
+                // Update queue item as completed
+                updateQueueItem(generationId, {
+                    status: 'completed',
+                    progress: 100,
+                    result: result
+                });
+
+                // Update podcast status in the list
+                setPodcasts(prev => prev.map(p =>
+                    p.id === podcast.id ? { ...p, status: 'completed' } : p
+                ));
+
+                // Force refresh of podcast data from server
+                console.log('Refreshing podcast data from server');
+                await loadData();
+            } else {
+                // Update queue item as error
+                updateQueueItem(generationId, {
+                    status: 'error',
+                    errorMessage: result.message || 'Generation failed'
+                });
+
+                // Update podcast status in the list
+                setPodcasts(prev => prev.map(p =>
+                    p.id === podcast.id ? { ...p, status: 'failed' } : p
+                ));
+
+                // Still refresh data on failure to get latest status
+                await loadData();
+            }
+
+        } catch (error: any) {
+            console.error('Generation error:', error);
+
+            // Update queue item as error
+            updateQueueItem(generationId, {
+                status: 'error',
+                errorMessage: error.message || 'Generation failed'
+            });
+
+            // Update podcast status in the list
+            setPodcasts(prev => prev.map(p =>
+                p.id === podcast.id ? { ...p, status: 'failed' } : p
+            ));
+
+            // Refresh data to get latest status even on error
+            await loadData();
+        }
+    };
+
+    // Enhanced generation with queue management (for existing podcasts)
+    const handleGenerateEnhanced = async (podcast: Podcast) => {
+        // Check if this podcast is already generating
+        const existingQueueItem = generationQueue.find(item => item.podcastId === podcast.id &&
+            (item.status === 'active' || item.status === 'queued'));
+
+        if (existingQueueItem) {
+            // Show the progress modal for existing generation
+            setCurrentGenerationId(existingQueueItem.id);
+            setShowProgressModal(true);
+            return;
+        }
+
+        // Start new background generation
+        startBackgroundGeneration(podcast);
     };
 
     // Progress modal handlers
@@ -295,7 +374,8 @@ export default function PodcastLibrary() {
 
     const handleCloseProgressModal = () => {
         setShowProgressModal(false);
-        setCurrentGenerationId(null);
+        // Don't clear currentGenerationId - generation continues in background
+        // setCurrentGenerationId(null);
     };
 
     // Show generation options modal
@@ -333,13 +413,24 @@ export default function PodcastLibrary() {
     const queueStats = getQueueStats();
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-pink-50">
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
             <div className="container mx-auto px-4 py-8">
                 {/* Header Section */}
                 <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-8">
                     <div>
-                        <h1 className="text-3xl font-bold text-gray-900 mb-2">My Podcast Library</h1>
-                        <p className="text-gray-600">Create, manage, and listen to your AI-generated podcasts</p>
+                        <div className="flex items-center gap-4 mb-4">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => router.push('/dashboard')}
+                                className="border-purple-500/50 text-purple-300 hover:bg-purple-500/20 hover:text-purple-200 hover:border-purple-400 transition-all duration-200"
+                            >
+                                <ArrowLeft className="h-4 w-4 mr-2" />
+                                Back to Dashboard
+                            </Button>
+                        </div>
+                        <h1 className="text-3xl font-bold text-white mb-2">My Podcast Library</h1>
+                        <p className="text-gray-300">Create, manage, and listen to your AI-generated podcasts</p>
                     </div>
 
                     <div className="mt-4 lg:mt-0 flex items-center gap-4">
@@ -353,11 +444,11 @@ export default function PodcastLibrary() {
                             <Button
                                 variant="outline"
                                 onClick={() => setShowQueuePanel(!showQueuePanel)}
-                                className="flex items-center gap-2"
+                                className="flex items-center gap-2 border-purple-500/50 text-purple-300 hover:bg-purple-500/20 hover:text-purple-200 hover:border-purple-400 transition-all duration-200"
                             >
                                 <Clock className="h-4 w-4" />
                                 <span className="hidden sm:inline">Queue</span>
-                                <Badge variant="secondary" className="ml-1">
+                                <Badge variant="secondary" className="ml-1 bg-purple-500/20 text-purple-300">
                                     {queueStats.active + queueStats.queued}
                                 </Badge>
                             </Button>
@@ -365,7 +456,7 @@ export default function PodcastLibrary() {
 
                         <Button
                             onClick={() => setShowCreateForm(true)}
-                            className="bg-purple-600 hover:bg-purple-700 text-white"
+                            className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white border-0 font-semibold shadow-lg hover:shadow-purple-500/25 transition-all duration-200"
                         >
                             <Plus className="h-4 w-4 mr-2" />
                             New Podcast
@@ -375,17 +466,18 @@ export default function PodcastLibrary() {
 
                 {/* Queue Management Panel */}
                 {showQueuePanel && queueStats.total > 0 && (
-                    <Card className="mb-6 border-purple-200">
+                    <Card className="mb-6 bg-slate-800/50 border-slate-700">
                         <CardHeader>
-                            <CardTitle className="flex items-center justify-between">
+                            <CardTitle className="flex items-center justify-between text-white">
                                 <div className="flex items-center gap-2">
-                                    <Clock className="h-5 w-5 text-purple-600" />
+                                    <Clock className="h-5 w-5 text-purple-400" />
                                     Generation Queue
                                 </div>
                                 <Button
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => setShowQueuePanel(false)}
+                                    className="text-slate-300 hover:text-white hover:bg-slate-700"
                                 >
                                     <X className="h-4 w-4" />
                                 </Button>
@@ -486,50 +578,50 @@ export default function PodcastLibrary() {
                 {/* Summary Cards */}
                 {summary && (
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-                        <Card>
+                        <Card className="bg-slate-800/50 border-slate-700">
                             <CardContent className="p-4">
                                 <div className="flex items-center justify-between">
                                     <div>
-                                        <p className="text-sm font-medium text-gray-600">Total Podcasts</p>
-                                        <p className="text-2xl font-bold text-gray-900">{summary.total_podcasts}</p>
+                                        <p className="text-sm font-medium text-gray-300">Total Podcasts</p>
+                                        <p className="text-2xl font-bold text-white">{summary.total_podcasts}</p>
                                     </div>
-                                    <Mic className="h-8 w-8 text-purple-600" />
+                                    <Mic className="h-8 w-8 text-purple-400" />
                                 </div>
                             </CardContent>
                         </Card>
 
-                        <Card>
+                        <Card className="bg-slate-800/50 border-slate-700">
                             <CardContent className="p-4">
                                 <div className="flex items-center justify-between">
                                     <div>
-                                        <p className="text-sm font-medium text-gray-600">Completed</p>
-                                        <p className="text-2xl font-bold text-green-600">{summary.completed_podcasts}</p>
+                                        <p className="text-sm font-medium text-gray-300">Completed</p>
+                                        <p className="text-2xl font-bold text-green-400">{summary.completed_podcasts}</p>
                                     </div>
-                                    <Volume2 className="h-8 w-8 text-green-600" />
+                                    <Volume2 className="h-8 w-8 text-green-400" />
                                 </div>
                             </CardContent>
                         </Card>
 
-                        <Card>
+                        <Card className="bg-slate-800/50 border-slate-700">
                             <CardContent className="p-4">
                                 <div className="flex items-center justify-between">
                                     <div>
-                                        <p className="text-sm font-medium text-gray-600">Generating</p>
-                                        <p className="text-2xl font-bold text-blue-600">{summary.pending_podcasts}</p>
+                                        <p className="text-sm font-medium text-gray-300">Generating</p>
+                                        <p className="text-2xl font-bold text-blue-400">{summary.pending_podcasts}</p>
                                     </div>
-                                    <Loader2 className="h-8 w-8 text-blue-600" />
+                                    <Loader2 className="h-8 w-8 text-blue-400" />
                                 </div>
                             </CardContent>
                         </Card>
 
-                        <Card>
+                        <Card className="bg-slate-800/50 border-slate-700">
                             <CardContent className="p-4">
                                 <div className="flex items-center justify-between">
                                     <div>
-                                        <p className="text-sm font-medium text-gray-600">Failed</p>
-                                        <p className="text-2xl font-bold text-red-600">{summary.failed_podcasts}</p>
+                                        <p className="text-sm font-medium text-gray-300">Failed</p>
+                                        <p className="text-2xl font-bold text-red-400">{summary.failed_podcasts}</p>
                                     </div>
-                                    <Clock className="h-8 w-8 text-red-600" />
+                                    <Clock className="h-8 w-8 text-red-400" />
                                 </div>
                             </CardContent>
                         </Card>
@@ -546,7 +638,7 @@ export default function PodcastLibrary() {
                                 placeholder="Search podcasts..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                className="w-full pl-10 pr-4 py-2 bg-slate-800/50 border border-slate-600 text-white placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                             />
                         </div>
                     </div>
@@ -555,7 +647,7 @@ export default function PodcastLibrary() {
                         <select
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value)}
-                            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                            className="px-3 py-2 bg-slate-800/50 border border-slate-600 text-white rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                         >
                             <option value="">All Status</option>
                             <option value="completed">Completed</option>
@@ -568,6 +660,7 @@ export default function PodcastLibrary() {
                             variant="outline"
                             onClick={loadData}
                             disabled={loading}
+                            className="border-purple-500/50 text-purple-300 hover:bg-purple-500/20 hover:text-purple-200 hover:border-purple-400 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                         </Button>
@@ -577,21 +670,37 @@ export default function PodcastLibrary() {
                 {/* Loading State */}
                 {loading && (
                     <div className="flex items-center justify-center py-12">
-                        <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+                        <Loader2 className="h-8 w-8 animate-spin text-purple-400" />
                     </div>
                 )}
 
                 {/* Podcasts Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {filteredPodcasts.map((podcast) => (
-                        <PodcastCard
-                            key={podcast.id}
-                            podcast={podcast}
-                            onGenerate={() => showGenerationModal(podcast)}
-                            onDelete={() => handleDelete(podcast)}
-                            isGenerating={generating === podcast.id}
-                        />
-                    ))}
+                    {filteredPodcasts.map((podcast) => {
+                        // Find if this podcast is in the generation queue
+                        const queueItem = generationQueue.find(item => item.podcastId === podcast.id);
+                        const isGenerating = queueItem && (queueItem.status === 'active' || queueItem.status === 'queued');
+                        const generationProgress = queueItem?.progress || 0;
+                        const generationPhase = queueItem?.phase;
+
+                        return (
+                            <PodcastCard
+                                key={podcast.id}
+                                podcast={podcast}
+                                onGenerate={() => showGenerationModal(podcast)}
+                                onDelete={() => handleDelete(podcast)}
+                                isGenerating={!!isGenerating}
+                                generationProgress={generationProgress}
+                                generationPhase={generationPhase}
+                                onViewProgress={() => {
+                                    if (queueItem) {
+                                        setCurrentGenerationId(queueItem.id);
+                                        setShowProgressModal(true);
+                                    }
+                                }}
+                            />
+                        );
+                    })}
                 </div>
 
                 {/* Pagination */}
@@ -602,11 +711,12 @@ export default function PodcastLibrary() {
                                 variant="outline"
                                 onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                                 disabled={currentPage === 1}
+                                className="border-purple-500/50 text-purple-300 hover:bg-purple-500/20 hover:text-purple-200 hover:border-purple-400 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 Previous
                             </Button>
 
-                            <span className="px-4 py-2 text-sm text-gray-600">
+                            <span className="px-4 py-2 text-sm text-purple-300">
                                 Page {currentPage} of {totalPages}
                             </span>
 
@@ -614,6 +724,7 @@ export default function PodcastLibrary() {
                                 variant="outline"
                                 onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                                 disabled={currentPage === totalPages}
+                                className="border-purple-500/50 text-purple-300 hover:bg-purple-500/20 hover:text-purple-200 hover:border-purple-400 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 Next
                             </Button>
@@ -625,14 +736,14 @@ export default function PodcastLibrary() {
                 {!loading && filteredPodcasts.length === 0 && (
                     <div className="text-center py-12">
                         <Mic className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                        <h3 className="text-lg font-medium text-gray-900 mb-2">No podcasts found</h3>
-                        <p className="text-gray-600 mb-4">
+                        <h3 className="text-lg font-medium text-white mb-2">No podcasts found</h3>
+                        <p className="text-gray-300 mb-4">
                             {searchTerm ? 'Try adjusting your search terms' : 'Create your first AI-generated podcast'}
                         </p>
                         {!searchTerm && (
                             <Button
                                 onClick={() => setShowCreateForm(true)}
-                                className="bg-purple-600 hover:bg-purple-700 text-white"
+                                className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white border-0 font-semibold shadow-lg hover:shadow-purple-500/25 transition-all duration-200"
                             >
                                 <Plus className="h-4 w-4 mr-2" />
                                 Create Podcast
@@ -658,38 +769,38 @@ export default function PodcastLibrary() {
                 {/* Create Podcast Modal */}
                 {showCreateForm && (
                     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                        <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-                            <h2 className="text-xl font-bold mb-4">Create New Podcast</h2>
+                        <div className="bg-slate-800 border border-slate-700 rounded-lg p-6 w-full max-w-md mx-4">
+                            <h2 className="text-xl font-bold mb-4 text-white">Create New Podcast</h2>
                             <form onSubmit={handleCreatePodcast}>
                                 <div className="space-y-4">
                                     <div>
-                                        <label className="block text-sm font-medium mb-1">Title</label>
+                                        <label className="block text-sm font-medium mb-1 text-gray-300">Title</label>
                                         <input
                                             type="text"
                                             value={newPodcast.title}
                                             onChange={(e) => setNewPodcast(prev => ({ ...prev, title: e.target.value }))}
-                                            className="w-full border border-gray-300 rounded-md px-3 py-2"
+                                            className="w-full bg-slate-700 border border-slate-600 text-white placeholder-gray-400 rounded-md px-3 py-2 focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                                             placeholder="Enter podcast title"
                                             required
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium mb-1">Topic</label>
+                                        <label className="block text-sm font-medium mb-1 text-gray-300">Topic</label>
                                         <textarea
                                             value={newPodcast.topic}
                                             onChange={(e) => setNewPodcast(prev => ({ ...prev, topic: e.target.value }))}
-                                            className="w-full border border-gray-300 rounded-md px-3 py-2"
+                                            className="w-full bg-slate-700 border border-slate-600 text-white placeholder-gray-400 rounded-md px-3 py-2 focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                                             placeholder="Describe the topic for your podcast"
                                             rows={3}
                                             required
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium mb-1">Length (minutes)</label>
+                                        <label className="block text-sm font-medium mb-1 text-gray-300">Length (minutes)</label>
                                         <select
                                             value={newPodcast.length}
                                             onChange={(e) => setNewPodcast(prev => ({ ...prev, length: parseInt(e.target.value) }))}
-                                            className="w-full border border-gray-300 rounded-md px-3 py-2"
+                                            className="w-full bg-slate-700 border border-slate-600 text-white rounded-md px-3 py-2 focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                                         >
                                             <option value={5}>5 minutes</option>
                                             <option value={10}>10 minutes</option>
@@ -704,25 +815,88 @@ export default function PodcastLibrary() {
                                         type="button"
                                         variant="outline"
                                         onClick={() => setShowCreateForm(false)}
+                                        className="border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white transition-all duration-200"
                                     >
                                         Cancel
                                     </Button>
                                     <Button
                                         type="submit"
+                                        className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white border-0 shadow-lg transition-all duration-200"
+                                    >
+                                        <ArrowLeft className="h-4 w-4 mr-2 rotate-180" />
+                                        Continue
+                                    </Button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* Credit Confirmation Modal */}
+                {showCreditConfirmation && pendingPodcastData && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div className="bg-slate-800 border border-slate-700 rounded-lg p-6 w-full max-w-md mx-4">
+                            <div className="text-center">
+                                <div className="flex items-center justify-center w-12 h-12 mx-auto mb-4 bg-yellow-500/20 rounded-full">
+                                    <AlertCircle className="h-6 w-6 text-yellow-400" />
+                                </div>
+                                <h2 className="text-xl font-bold mb-4 text-white">Confirm Podcast Generation</h2>
+
+                                <div className="bg-slate-700/50 rounded-lg p-4 mb-6 text-left">
+                                    <h3 className="font-semibold text-white mb-2">Podcast Details:</h3>
+                                    <p className="text-sm text-gray-300 mb-1">
+                                        <span className="font-medium">Title:</span> {pendingPodcastData.title}
+                                    </p>
+                                    <p className="text-sm text-gray-300 mb-1">
+                                        <span className="font-medium">Duration:</span> {pendingPodcastData.length} minutes
+                                    </p>
+                                    <p className="text-sm text-gray-300">
+                                        <span className="font-medium">Topic:</span> {pendingPodcastData.topic}
+                                    </p>
+                                </div>
+
+                                <div className="bg-purple-500/20 border border-purple-500/30 rounded-lg p-4 mb-6">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <Volume2 className="h-4 w-4 text-purple-400" />
+                                        <span className="text-sm font-medium text-purple-300">Credit Usage</span>
+                                    </div>
+                                    <p className="text-sm text-purple-200 mb-2">
+                                        Your podcast will be generated with high-quality AI voices and content.
+                                    </p>
+                                    <p className="text-sm text-purple-200">
+                                        <span className="font-medium">Credits will be deducted</span> only after successful generation and completion.
+                                    </p>
+                                </div>
+
+                                <div className="flex flex-col gap-3">
+                                    <Button
+                                        onClick={handleConfirmCreateAndGenerate}
                                         disabled={creating}
-                                        className="bg-purple-600 hover:bg-purple-700 text-white"
+                                        className="w-full bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white border-0 shadow-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         {creating ? (
                                             <>
                                                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                                Creating...
+                                                Creating & Generating...
                                             </>
                                         ) : (
-                                            'Create'
+                                            <>
+                                                <Mic className="h-4 w-4 mr-2" />
+                                                Confirm & Generate Podcast
+                                            </>
                                         )}
                                     </Button>
+
+                                    <Button
+                                        variant="outline"
+                                        onClick={handleCancelCreate}
+                                        disabled={creating}
+                                        className="w-full border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white transition-all duration-200"
+                                    >
+                                        Go Back to Edit
+                                    </Button>
                                 </div>
-                            </form>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -734,22 +908,14 @@ export default function PodcastLibrary() {
                             <h2 className="text-xl font-bold mb-4">Generation Options</h2>
 
                             <div className="space-y-6">
-                                {/* Voice Generation Toggle */}
-                                <div className="border rounded-lg p-4">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <label className="text-sm font-medium">Generate Voice Audio</label>
-                                        <input
-                                            type="checkbox"
-                                            checked={generationOptions.generateVoice}
-                                            onChange={(e) => setGenerationOptions(prev => ({
-                                                ...prev,
-                                                generateVoice: e.target.checked
-                                            }))}
-                                            className="rounded"
-                                        />
+                                {/* Audio generation is always enabled for podcasts */}
+                                <div className="border rounded-lg p-4 bg-green-50">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <Volume2 className="h-4 w-4 text-green-600" />
+                                        <span className="text-sm font-medium text-green-800">Audio Generation Enabled</span>
                                     </div>
-                                    <p className="text-xs text-gray-600">
-                                        Enable to generate audio using Chatterbox TTS (local processing)
+                                    <p className="text-xs text-green-700">
+                                        Your podcast will include high-quality voice audio using Chatterbox TTS
                                     </p>
                                 </div>
 
@@ -794,41 +960,40 @@ export default function PodcastLibrary() {
                                 </div>
 
                                 {/* Audio Options */}
-                                {generationOptions.generateVoice && (
-                                    <div className="border rounded-lg p-4">
-                                        <h3 className="font-medium mb-3">Audio Options</h3>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <label className="flex items-center space-x-2">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={generationOptions.audio_options.add_intro}
-                                                    onChange={(e) => setGenerationOptions(prev => ({
-                                                        ...prev,
-                                                        audio_options: { ...prev.audio_options, add_intro: e.target.checked }
-                                                    }))}
-                                                />
-                                                <span className="text-sm">Add Intro</span>
-                                            </label>
-                                            <label className="flex items-center space-x-2">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={generationOptions.audio_options.add_outro}
-                                                    onChange={(e) => setGenerationOptions(prev => ({
-                                                        ...prev,
-                                                        audio_options: { ...prev.audio_options, add_outro: e.target.checked }
-                                                    }))}
-                                                />
-                                                <span className="text-sm">Add Outro</span>
-                                            </label>
-                                        </div>
+                                <div className="border rounded-lg p-4">
+                                    <h3 className="font-medium mb-3">Audio Options</h3>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <label className="flex items-center space-x-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={generationOptions.audio_options.add_intro}
+                                                onChange={(e) => setGenerationOptions(prev => ({
+                                                    ...prev,
+                                                    audio_options: { ...prev.audio_options, add_intro: e.target.checked }
+                                                }))}
+                                            />
+                                            <span className="text-sm">Add Intro</span>
+                                        </label>
+                                        <label className="flex items-center space-x-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={generationOptions.audio_options.add_outro}
+                                                onChange={(e) => setGenerationOptions(prev => ({
+                                                    ...prev,
+                                                    audio_options: { ...prev.audio_options, add_outro: e.target.checked }
+                                                }))}
+                                            />
+                                            <span className="text-sm">Add Outro</span>
+                                        </label>
                                     </div>
-                                )}
+                                </div>
                             </div>
 
                             <div className="flex justify-end space-x-3 mt-6">
                                 <Button
                                     variant="outline"
                                     onClick={() => setShowGenerationOptions(null)}
+                                    className="border-slate-600 text-slate-700 hover:bg-slate-100 hover:text-slate-800 transition-all duration-200"
                                 >
                                     Cancel
                                 </Button>
@@ -840,7 +1005,7 @@ export default function PodcastLibrary() {
                                         }
                                     }}
                                     disabled={generating !== null}
-                                    className="bg-purple-600 hover:bg-purple-700 text-white"
+                                    className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white border-0 shadow-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     {generating ? (
                                         <>

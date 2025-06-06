@@ -126,6 +126,17 @@ class ApiClient {
         }
     }
 
+    hasToken(): boolean {
+        return !!this.token
+    }
+
+    // Refresh token from localStorage if needed
+    refreshTokenFromStorage() {
+        if (typeof window !== 'undefined' && !this.token) {
+            this.token = localStorage.getItem('access_token')
+        }
+    }
+
     async request<T>(
         endpoint: string,
         options: RequestInit = {}
@@ -139,6 +150,9 @@ class ApiClient {
 
         if (this.token) {
             headers.Authorization = `Bearer ${this.token}`
+            console.log(`API Request to ${endpoint} - Token included: Yes (length: ${this.token.length})`)
+        } else {
+            console.log(`API Request to ${endpoint} - Token included: No`)
         }
 
         const response = await fetch(url, {
@@ -148,6 +162,7 @@ class ApiClient {
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}))
+            console.error(`API Error ${response.status} for ${endpoint}:`, errorData)
             throw new Error(errorData.detail || `HTTP error! status: ${response.status}`)
         }
 
@@ -332,6 +347,7 @@ class ApiClient {
     // Enhanced AI Pipeline with Voice Generation
     async generatePodcastWithAI(id: number, options?: {
         generateVoice?: boolean;
+        assemble_audio?: boolean;
         hostPersonalities?: {
             host_1?: { name: string; personality: string; voice_id?: string; role?: string };
             host_2?: { name: string; personality: string; voice_id?: string; role?: string };
@@ -347,6 +363,18 @@ class ApiClient {
             avoid_topics?: string[];
             target_audience?: string;
         };
+        audio_options?: {
+            add_intro?: boolean;
+            add_outro?: boolean;
+            intro_style?: string;
+            outro_style?: string;
+            intro_asset_id?: string;
+            outro_asset_id?: string;
+            add_transitions?: boolean;
+            transition_asset_id?: string;
+            add_background_music?: boolean;
+            background_asset_id?: string;
+        };
     }): Promise<{
         success: boolean;
         generation_id?: string;
@@ -359,7 +387,8 @@ class ApiClient {
         const requestBody = {
             podcast_id: id,
             custom_settings: {
-                generate_voice: options?.generateVoice || false,
+                generate_voice: options?.generateVoice ?? true,
+                assemble_audio: options?.assemble_audio ?? true,
                 hosts: options?.hostPersonalities || {
                     host_1: {
                         name: "Felix",
@@ -381,6 +410,18 @@ class ApiClient {
                 content_preferences: options?.contentPreferences || {
                     focus_areas: ["practical applications", "recent developments"],
                     target_audience: "general public"
+                },
+                audio_options: options?.audio_options || {
+                    add_intro: true,
+                    add_outro: true,
+                    intro_style: "overlay",
+                    outro_style: "overlay",
+                    intro_asset_id: "default_intro",
+                    outro_asset_id: "default_outro",
+                    add_transitions: false,
+                    transition_asset_id: "default_transition",
+                    add_background_music: false,
+                    background_asset_id: ""
                 }
             }
         };

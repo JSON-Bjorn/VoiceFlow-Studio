@@ -17,6 +17,7 @@ from ..schemas.podcast import (
 )
 from ..services.podcast_service import PodcastService
 from ..services.storage_service import storage_service
+from ..services.audio_agent import AudioAgent
 
 router = APIRouter(prefix="/api/podcasts", tags=["podcasts"])
 
@@ -167,34 +168,83 @@ async def download_podcast(
         raise HTTPException(status_code=404, detail="Audio file not found")
 
     try:
+        # Log available files for debugging
+        print(f"Podcast {podcast_id} audio files: {podcast.audio_file_paths}")
+
         # Get the main episode file (not segments)
         main_audio_files = []
+        segment_audio_files = []
+
         if podcast.audio_file_paths:
             for file_path in podcast.audio_file_paths:
-                if not "/segments/" in file_path and file_path.endswith(".mp3"):
-                    main_audio_files.append(file_path)
+                # Accept both .mp3 and .wav files
+                if file_path.endswith((".mp3", ".wav")):
+                    # Check for segments folder using both forward and back slashes
+                    if "/segments/" in file_path or "\\segments\\" in file_path:
+                        segment_audio_files.append(file_path)
+                    else:
+                        # This is likely a complete episode file
+                        main_audio_files.append(file_path)
 
-        if not main_audio_files:
+        print(f"Main audio files found: {main_audio_files}")
+        print(f"Segment audio files found: {segment_audio_files}")
+
+        # Prefer main episode file (merged audio), fallback to first segment
+        if main_audio_files:
+            # Use the most recent main audio file (last one created)
+            audio_file_path = main_audio_files[-1]
+            print(f"Using main episode file: {audio_file_path}")
+        elif segment_audio_files:
+            audio_file_path = segment_audio_files[0]  # Use first segment as fallback
+            print(f"No main episode found, using first segment: {audio_file_path}")
+            print(
+                "WARNING: Only serving first segment - audio assembly may have failed"
+            )
+        else:
+            print(f"No suitable audio files found in: {podcast.audio_file_paths}")
             raise HTTPException(
-                status_code=404, detail="No downloadable audio file found"
+                status_code=404,
+                detail=f"No downloadable audio file found. Available files: {podcast.audio_file_paths}",
             )
 
-        # Use the most recent main audio file
-        audio_file_path = main_audio_files[-1]
+        # Remove the "storage" prefix if it exists (storage service adds it automatically)
+        if audio_file_path.startswith("storage\\") or audio_file_path.startswith(
+            "storage/"
+        ):
+            audio_file_path = audio_file_path.replace("storage\\", "").replace(
+                "storage/", ""
+            )
+            print(f"Adjusted file path for storage service: {audio_file_path}")
 
         # Get file data
-        file_data = await storage_service.get_audio_file(audio_file_path)
+        print(f"Attempting to retrieve audio file: {audio_file_path}")
+        try:
+            file_data = await storage_service.get_audio_file(audio_file_path)
+            print(f"Successfully retrieved {len(file_data)} bytes")
+        except Exception as file_error:
+            print(f"Failed to retrieve audio file {audio_file_path}: {file_error}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Audio file exists in database but could not be retrieved: {str(file_error)}",
+            )
 
-        # Create safe filename
+        # Create safe filename and determine media type
         safe_title = "".join(
             c for c in podcast.title if c.isalnum() or c in (" ", "-", "_")
         ).rstrip()
-        filename = f"{safe_title}.mp3"
+
+        # Use the original file extension
+        if audio_file_path.endswith(".wav"):
+            filename = f"{safe_title}.wav"
+            media_type = "audio/wav"
+        else:
+            filename = f"{safe_title}.mp3"
+            media_type = "audio/mpeg"
 
         # Return file with download headers
         return Response(
             content=file_data,
-            media_type="audio/mpeg",
+            media_type=media_type,
             headers={
                 "Content-Disposition": f'attachment; filename="{filename}"',
                 "Content-Length": str(len(file_data)),
@@ -206,6 +256,62 @@ async def download_podcast(
         raise HTTPException(
             status_code=500, detail=f"Error downloading podcast: {str(e)}"
         )
+
+
+@router.get("/{podcast_id}/audio-debug")
+async def debug_podcast_audio(
+    podcast_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Debug endpoint to check audio assembly status"""
+    service = PodcastService(db)
+    podcast = service.get_podcast_by_id(podcast_id, current_user.id)
+
+    if not podcast:
+        raise HTTPException(status_code=404, detail="Podcast not found")
+
+    # Check audio agent availability
+    audio_agent = AudioAgent()
+
+    debug_info = {
+        "podcast_id": podcast_id,
+        "podcast_status": podcast.status,
+        "has_audio": podcast.has_audio,
+        "audio_url": podcast.audio_url,
+        "audio_file_paths": podcast.audio_file_paths or [],
+        "audio_segments_count": podcast.audio_segments_count,
+        "audio_total_duration": podcast.audio_total_duration,
+        "audio_agent_available": audio_agent.is_available(),
+        "file_analysis": {"main_files": [], "segment_files": [], "total_files": 0},
+    }
+
+    # Analyze files
+    if podcast.audio_file_paths:
+        for file_path in podcast.audio_file_paths:
+            debug_info["file_analysis"]["total_files"] += 1
+
+            if "/segments/" in file_path or "\\segments\\" in file_path:
+                debug_info["file_analysis"]["segment_files"].append(file_path)
+            else:
+                debug_info["file_analysis"]["main_files"].append(file_path)
+
+    # Add recommendations
+    recommendations = []
+    if not debug_info["audio_agent_available"]:
+        recommendations.append("PyDub not available - audio assembly disabled")
+    elif debug_info["file_analysis"]["main_files"]:
+        recommendations.append(
+            "✓ Complete episode file found - should download correctly"
+        )
+    elif debug_info["file_analysis"]["segment_files"]:
+        recommendations.append("⚠ Only segments found - audio assembly may have failed")
+    else:
+        recommendations.append("❌ No audio files found")
+
+    debug_info["recommendations"] = recommendations
+
+    return debug_info
 
 
 @router.get("/{podcast_id}/share-info")

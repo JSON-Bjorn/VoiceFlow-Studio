@@ -18,7 +18,26 @@ export default function DashboardPage() {
     useEffect(() => {
         const loadUserData = async () => {
             try {
+                console.log('Dashboard loading, checking authentication...')
+
+                // Check localStorage directly
+                const directToken = localStorage.getItem('access_token')
+                console.log('Direct localStorage check - token exists:', directToken ? 'Yes' : 'No')
+                console.log('Direct token length:', directToken?.length || 0)
+
+                // Ensure we have the token from localStorage
+                api.refreshTokenFromStorage()
+
+                // Check if we have a token before making API calls
+                if (!api.hasToken()) {
+                    console.log('No authentication token found, redirecting to login')
+                    router.push('/auth/login')
+                    return
+                }
+
+                console.log('Token found, making API call to /api/users/me')
                 const userData = await api.getCurrentUser()
+                console.log('User data received:', userData)
                 setUser(userData)
 
                 // Load credit summary
@@ -26,6 +45,7 @@ export default function DashboardPage() {
                 setCreditSummary(summary)
             } catch (error) {
                 // If we can't get user data, redirect to login
+                console.error('Dashboard auth error:', error)
                 router.push('/auth/login')
             } finally {
                 setIsLoading(false)
@@ -76,7 +96,7 @@ export default function DashboardPage() {
                                 <Button
                                     variant="outline"
                                     size="sm"
-                                    className="border-slate-600 text-white hover:bg-slate-700"
+                                    className="border-orange-400 text-orange-400 hover:bg-orange-400 hover:text-slate-900"
                                 >
                                     <Settings className="h-4 w-4 mr-2" />
                                     Profile
@@ -86,7 +106,7 @@ export default function DashboardPage() {
                                 variant="outline"
                                 size="sm"
                                 onClick={handleLogout}
-                                className="border-slate-600 text-white hover:bg-slate-700"
+                                className="border-red-400 text-red-400 hover:bg-red-400 hover:text-slate-900"
                             >
                                 <LogOut className="h-4 w-4 mr-2" />
                                 Logout
@@ -118,26 +138,25 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Quick Actions */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                    <Card className="bg-slate-800/50 border-slate-700 hover:bg-slate-800/70 transition-colors cursor-pointer">
-                        <CardHeader>
-                            <CardTitle className="text-white flex items-center">
-                                <Plus className="h-5 w-5 mr-2 text-purple-400" />
-                                Create New Podcast
-                            </CardTitle>
-                            <CardDescription className="text-gray-300">
-                                Generate a new AI podcast from your topic
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <Button
-                                className="w-full bg-purple-600 hover:bg-purple-700"
-                                disabled={user.credits === 0}
-                            >
-                                {user.credits === 0 ? 'No Credits' : 'Start Creating'}
-                            </Button>
-                        </CardContent>
-                    </Card>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                    <Link href="/dashboard/library">
+                        <Card className="bg-slate-800/50 border-slate-700 hover:bg-slate-800/70 transition-colors cursor-pointer h-full">
+                            <CardHeader>
+                                <CardTitle className="text-white flex items-center">
+                                    <History className="h-5 w-5 mr-2 text-purple-400" />
+                                    My Podcasts
+                                </CardTitle>
+                                <CardDescription className="text-gray-300">
+                                    View, manage, and create new AI-powered podcasts
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <Button variant="outline" className="w-full border-purple-500 text-purple-500 hover:bg-purple-500 hover:text-slate-900 font-semibold">
+                                    Open Studio
+                                </Button>
+                            </CardContent>
+                        </Card>
+                    </Link>
 
                     <Card className="bg-slate-800/50 border-slate-700 hover:bg-slate-800/70 transition-colors cursor-pointer">
                         <CardHeader>
@@ -152,32 +171,13 @@ export default function DashboardPage() {
                         <CardContent>
                             <Button
                                 variant="outline"
-                                className="w-full border-slate-600 text-white hover:bg-slate-700"
+                                className="w-full border-green-400 text-green-400 hover:bg-green-400 hover:text-slate-900"
                                 onClick={handleBuyCredits}
                             >
                                 View Plans
                             </Button>
                         </CardContent>
                     </Card>
-
-                    <Link href="/dashboard/library">
-                        <Card className="bg-slate-800/50 border-slate-700 hover:bg-slate-800/70 transition-colors cursor-pointer h-full">
-                            <CardHeader>
-                                <CardTitle className="text-white flex items-center">
-                                    <History className="h-5 w-5 mr-2 text-blue-400" />
-                                    Podcast History
-                                </CardTitle>
-                                <CardDescription className="text-gray-300">
-                                    View and manage your created podcasts
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <Button variant="outline" className="w-full border-slate-600 text-white hover:bg-slate-700">
-                                    View History
-                                </Button>
-                            </CardContent>
-                        </Card>
-                    </Link>
 
                     <Link href="/dashboard/profile">
                         <Card className="bg-slate-800/50 border-slate-700 hover:bg-slate-800/70 transition-colors cursor-pointer h-full">
@@ -191,7 +191,7 @@ export default function DashboardPage() {
                                 </CardDescription>
                             </CardHeader>
                             <CardContent>
-                                <Button variant="outline" className="w-full border-slate-600 text-white hover:bg-slate-700">
+                                <Button variant="outline" className="w-full border-orange-400 text-orange-400 hover:bg-orange-400 hover:text-slate-900">
                                     Manage Profile
                                 </Button>
                             </CardContent>
