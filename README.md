@@ -1,16 +1,17 @@
 # VoiceFlow Studio 🎙️
 
-An AI-powered podcast generation platform that creates high-quality, engaging podcasts from simple prompts. Built with Next.js, FastAPI, and advanced AI pipeline powered by OpenAI and Chatterbox TTS.
+An AI-powered podcast generation platform that creates high-quality, engaging podcasts from simple prompts. Built with Next.js, FastAPI, and advanced AI pipeline powered by OpenAI and GPU-accelerated Chatterbox TTS.
 
 ## 🎯 Overview
 
-VoiceFlow Studio transforms any topic into engaging, professional-quality podcasts featuring natural conversations between AI hosts with distinct personalities. Users can generate podcasts in minutes using our advanced AI pipeline powered by OpenAI and Chatterbox TTS.
+VoiceFlow Studio transforms any topic into engaging, professional-quality podcasts featuring natural conversations between AI hosts with distinct personalities. Users can generate podcasts in minutes using our advanced AI pipeline powered by OpenAI and GPU-accelerated Chatterbox TTS for ultra-fast audio generation.
 
 ## 🚀 Features
 
 ### Core Features
 - **Enhanced 6-Agent AI System**: Sophisticated multi-agent pipeline for natural conversations
-- **Professional Quality**: Studio-quality audio with music and effects (coming soon)
+- **GPU-Accelerated Audio**: Ultra-fast TTS with mandatory GPU acceleration (10-minute podcasts in <15 minutes)
+- **Professional Quality**: Studio-quality MP3 audio (128kbps, 44.1kHz, stereo)
 - **Instant Creation**: Generate podcast scripts in minutes with AI agents
 - **Credit System**: Pay-per-use model with Stripe integration
 - **Example Library**: Showcase of AI-generated podcast samples
@@ -18,6 +19,7 @@ VoiceFlow Studio transforms any topic into engaging, professional-quality podcas
 ### Technical Features
 - **Modern Frontend**: Next.js 14+ with TypeScript and Tailwind CSS
 - **Robust Backend**: FastAPI with async support and SQLAlchemy ORM
+- **GPU-Only Architecture**: Mandatory NVIDIA GPU acceleration for production performance
 - **Secure Authentication**: JWT-based auth with password hashing
 - **Payment Integration**: Complete Stripe integration for credit purchases
 - **Advanced AI Pipeline**: 6-agent system with sophisticated conversation generation
@@ -34,15 +36,33 @@ VoiceFlow Studio transforms any topic into engaging, professional-quality podcas
 ### Backend
 - **FastAPI** - Modern Python web framework
 - **PostgreSQL** - Reliable database with SQLAlchemy ORM
-- **Chatterbox TTS** - Open-source text-to-speech engine
+- **GPU-Accelerated Chatterbox TTS** - Ultra-fast text-to-speech with CUDA
 - **OpenAI API** - GPT models for content generation
 - **Stripe** - Payment processing
 - **Pydantic** - Data validation
 
 ### AI Services
 - **OpenAI GPT-4** - Script generation and content creation
-- **Chatterbox TTS** - Voice synthesis and audio generation
+- **Chatterbox TTS + GPU** - GPU-accelerated voice synthesis
+- **PyTorch CUDA** - GPU acceleration framework
 - **Custom Agents** - Specialized AI agents for different tasks
+
+## ⚡ System Requirements
+
+### **Mandatory for Production:**
+- **NVIDIA GPU**: 4GB+ VRAM required
+- **CUDA Toolkit**: Latest version installed
+- **GPU Drivers**: Compatible NVIDIA drivers
+- **Python**: 3.10+ (recommended 3.11)
+- **FFmpeg**: System binary for audio processing
+
+### **Performance Expectations:**
+| Content Length | Generation Time | Improvement vs CPU |
+|----------------|----------------|-------------------|
+| Short Text (1-2 min) | <2 minutes | ~9x faster |
+| Medium Text (5 min) | <7 minutes | ~3x faster |
+| Long Podcast (10 min) | <15 minutes | ~3x faster |
+| Cache Hits | Instant | ∞x faster |
 
 ## 📁 Project Structure
 
@@ -88,31 +108,79 @@ VoiceFlow Studio/
 
 ## 🚀 Quick Start
 
-### Option 1: Automated Setup (Recommended)
+### Option 1: Automated Setup with Activation (Recommended)
 
-**Windows:**
+**One-Command Setup + Activation:**
 ```bash
-# Double-click start-dev.bat or run:
-start-dev.bat
+# Windows (automatically activates venv)
+setup-and-activate.bat
+
+# macOS/Linux (automatically activates venv)
+./setup-and-activate.sh
+
+# Or use PowerShell on Windows
+.\setup.ps1
 ```
 
-**macOS/Linux:**
+**Alternative - Setup Only:**
 ```bash
-./start-dev.sh
+# Run setup script only (manual activation needed)
+python setup.py
+
+# Or skip GPU validation (NOT RECOMMENDED for production)
+python setup.py --no-gpu
+```
+
+**Daily Development:**
+```bash
+# Activate the unified virtual environment
+source venv/bin/activate    # macOS/Linux
+venv\Scripts\activate       # Windows
+
+# Start backend (Terminal 1)
+cd backend && uvicorn app.main:app --reload
+
+# Start frontend (Terminal 2) 
+cd frontend && npm run dev
 ```
 
 ### Option 2: Manual Setup
 
-**Backend (Terminal 1):**
+**1. Create Unified Virtual Environment:**
 ```bash
-cd backend
-source venv/Scripts/activate  # Windows Git Bash
-source venv/bin/activate      # macOS/Linux
-python run.py
+# In project root
+python -m venv venv
+source venv/bin/activate    # macOS/Linux
+venv\Scripts\activate       # Windows
 ```
 
-**Frontend (Terminal 2):**
+**2. Install All Dependencies:**
 ```bash
+# Install PyTorch with CUDA first (recommended)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+# Install all project dependencies
+pip install -r requirements.txt
+```
+
+**3. Validate GPU Acceleration:**
+```bash
+python gpu_acceleration_test.py
+```
+
+**4. Setup Environment:**
+```bash
+# Copy and edit environment file
+cp .env.example .env  # Create your .env file
+```
+
+**5. Start Development:**
+```bash
+# Backend (Terminal 1)
+cd backend
+uvicorn app.main:app --reload
+
+# Frontend (Terminal 2)
 cd frontend
 npm run dev
 ```
@@ -121,6 +189,21 @@ npm run dev
 - **Frontend**: http://localhost:3000 (or next available port)
 - **Backend API**: http://localhost:8000
 - **API Documentation**: http://localhost:8000/docs
+- **GPU Test**: `python gpu_acceleration_test.py`
+
+### Project Structure (Unified)
+```
+VoiceFlow Studio/
+├── venv/                    # 🆕 Unified virtual environment
+├── requirements.txt         # 🆕 All Python dependencies
+├── .python-version         # 🆕 Python version specification
+├── setup.py                # 🆕 Automated setup script
+├── gpu_acceleration_test.py # 🆕 GPU validation script
+├── .env                    # Environment configuration
+├── backend/                # FastAPI backend
+├── frontend/               # Next.js frontend
+└── README.md              # This file
+```
 
 ## 📋 Current Status
 

@@ -1,0 +1,100 @@
+# VoiceFlow Studio - Unified Python Dependencies
+# This file contains all Python dependencies for the entire project (backend + any Python tooling)
+
+# =====================================================
+# CORE FRAMEWORK & API
+# =====================================================
+fastapi==0.115.12
+uvicorn==0.34.2
+python-multipart==0.0.20
+python-dotenv==1.1.0
+requests==2.32.3
+
+# =====================================================
+# DATA & VALIDATION
+# =====================================================
+pydantic==2.11.5
+pydantic-settings==2.9.1
+
+# =====================================================
+# DATABASE & ORM
+# =====================================================
+sqlalchemy==2.0.41
+psycopg2-binary==2.9.10
+alembic==1.16.1
+
+# =====================================================
+# AUTHENTICATION & SECURITY
+# =====================================================
+python-jose==3.4.0
+bcrypt==4.3.0
+
+# =====================================================
+# EXTERNAL APIS & PAYMENTS
+# =====================================================
+openai==1.82.0
+stripe==12.1.0
+
+# =====================================================
+# GPU-ACCELERATED AI & TTS (MANDATORY)
+# =====================================================
+# PyTorch with CUDA support - REQUIRED for production performance
+# Install command: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+torch>=2.7.0,<3.0.0
+torchaudio>=2.7.0,<3.0.0
+
+# Transformers for AI model support
+transformers>=4.52.0,<5.0.0
+
+# TTS Compatibility Note:
+# Both chatterbox-tts and TTS libraries require Python <3.13
+# For full TTS functionality, use Python 3.11 with:
+# pip install chatterbox-tts==0.1.1
+# Current setup uses mock TTS for Python 3.13 compatibility
+
+# PEFT for LoRA support (replaces deprecated LoRACompatibleLinear)
+peft>=0.15.0,<1.0.0
+
+# Diffusers with compatibility fixes for deprecation warnings
+diffusers>=0.29.0,<1.0.0
+
+# =====================================================
+# AUDIO PROCESSING & MANIPULATION
+# =====================================================
+# PyDub for audio format conversion and processing
+pydub>=0.25.1
+
+# FFmpeg Python bindings for advanced audio operations
+ffmpeg-python>=0.2.0
+
+# =====================================================
+# TESTING & DEVELOPMENT
+# =====================================================
+pytest==8.3.4
+pytest-asyncio==0.25.0
+pytest-cov==6.0.0
+pytest-mock==3.14.0
+httpx==0.28.1
+
+# =====================================================
+# SYSTEM REQUIREMENTS NOTES
+# =====================================================
+# 
+# GPU ACCELERATION (MANDATORY for production):
+# 1. NVIDIA GPU with 4GB+ VRAM
+# 2. CUDA toolkit installed
+# 3. Compatible GPU drivers
+# 4. PyTorch CUDA installation:
+#    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+#
+# AUDIO PROCESSING:
+# 1. FFmpeg system binary required for PyDub
+#    - Windows: Download from https://ffmpeg.org/download.html
+#    - macOS: brew install ffmpeg
+#    - Linux: apt-get install ffmpeg
+#
+# INSTALLATION:
+# 1. Create virtual environment: python -m venv venv
+# 2. Activate: source venv/bin/activate (Linux/Mac) or venv\Scripts\activate (Windows)
+# 3. Install: pip install -r requirements.txt
+# 4. Verify GPU: python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}')" 

@@ -414,21 +414,34 @@ export default function PodcastLibrary() {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-            <div className="container mx-auto px-4 py-8">
-                {/* Header Section */}
-                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-8">
-                    <div>
-                        <div className="flex items-center gap-4 mb-4">
+            {/* Header */}
+            <header className="border-b border-slate-700 bg-slate-800/50">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="flex justify-between items-center h-16">
+                        <div className="flex items-center space-x-4">
                             <Button
-                                variant="outline"
-                                size="sm"
+                                variant="ghost"
                                 onClick={() => router.push('/dashboard')}
-                                className="border-purple-500/50 text-purple-300 hover:bg-purple-500/20 hover:text-purple-200 hover:border-purple-400 transition-all duration-200"
+                                className="flex items-center space-x-2 text-gray-300 hover:text-white"
                             >
-                                <ArrowLeft className="h-4 w-4 mr-2" />
-                                Back to Dashboard
+                                <ArrowLeft className="h-5 w-5" />
+                                <span>Back to Dashboard</span>
                             </Button>
                         </div>
+
+                        <div className="flex items-center space-x-2">
+                            <Mic className="h-8 w-8 text-purple-400" />
+                            <span className="text-xl font-bold text-white">VoiceFlow Studio</span>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            {/* Main Content */}
+            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                {/* Page Header Section */}
+                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-8">
+                    <div>
                         <h1 className="text-3xl font-bold text-white mb-2">My Podcast Library</h1>
                         <p className="text-gray-300">Create, manage, and listen to your AI-generated podcasts</p>
                     </div>
@@ -1023,7 +1036,7 @@ export default function PodcastLibrary() {
                         </div>
                     </div>
                 )}
-            </div>
+            </main>
         </div>
     );
 } 

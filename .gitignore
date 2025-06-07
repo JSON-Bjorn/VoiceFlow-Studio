@@ -1,81 +1,378 @@
-*.txt
-.env
-env
-*.env
-venv
+# VoiceFlow Studio - Unified .gitignore
+
+# =====================================================
+# UNIFIED VIRTUAL ENVIRONMENT (PROJECT ROOT)
+# =====================================================
+/venv/
 venv/
 .venv/
-.venv
+env/
+ENV/
 
-# Test files and directories
-**/__tests__/
-**/tests/
-*.test.js
-*.test.jsx
-*.test.ts
-*.test.tsx
-*.spec.js
-*.spec.jsx
-*.spec.ts
-*.spec.tsx
-test-results/
-coverage/
-.coverage
-*.log
-
-# Test scripts and response files
-test_*.py
-test_*.js
-test_*.json
-*_test.py
-*_test.js
-response_*.json
-token_*.json
-test-response*.json
-*-frontend-tests.log
-all-*-tests.log
-
-# Node modules and build artifacts
-node_modules/
-.next/
-dist/
-build/
-.DS_Store
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Python cache
+# =====================================================
+# PYTHON / BACKEND
+# =====================================================
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
+*.so
 .Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# Testing documentation (optional - uncomment if you want to exclude)
-# TESTING_*.md
-# *testing*.md
+# PyInstaller
+*.manifest
+*.spec
 
-# Temporary files
-*.tmp
-*.temp
-temp/
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# =====================================================
+# NODE.JS / FRONTEND
+# =====================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# nyc test coverage
+.nyc_output
+
+# Grunt intermediate storage
+.grunt
+
+# Bower dependency directory
+bower_components
+
+# node-waf configuration
+.lock-wscript
+
+# Compiled binary addons
+build/Release
+
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# parcel-bundler cache
+.cache
+.parcel-cache
+
+# Next.js build output
+.next/
+out/
+
+# Nuxt.js build / generate output
+.nuxt
+dist
+
+# Gatsby files
 .cache/
+public
 
-# Database files
+# Storybook build outputs
+.out
+.storybook-out
+
+# =====================================================
+# DATABASE & STORAGE
+# =====================================================
 *.db
 *.sqlite
 *.sqlite3
+/backend/storage/
+/storage/
+uploads/
+/backend/uploads/
 
-# Audio/media files that might be large
-*.wav
+# Alembic versions (keep structure, ignore specific versions)
+# /backend/alembic/versions/*.py
+# !backend/alembic/versions/__init__.py
+
+# =====================================================
+# ENVIRONMENT & CONFIGURATION
+# =====================================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.example
+
+# =====================================================
+# LOGS & DEBUGGING
+# =====================================================
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# =====================================================
+# AUDIO & MEDIA FILES
+# =====================================================
 *.mp3
-*.mp4
-storage/audio/
-backend/storage/
+*.wav
+*.ogg
+*.m4a
+*.aac
+*.flac
+/backend/storage/audio/
+/audio_cache/
+/temp_audio/
+
+# =====================================================
+# AI MODEL CACHE & ARTIFACTS
+# =====================================================
+/model_cache/
+/huggingface_cache/
+.chatterbox_cache/
+/torch_cache/
+*.pt
+*.pth
+*.bin
+*.safetensors
+
+# =====================================================
+# OPERATING SYSTEM
+# =====================================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.tmp
+*.temp
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# =====================================================
+# DEVELOPMENT TOOLS & IDE
+# =====================================================
+# VSCode
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+
+# Local History for Visual Studio Code
+.history/
+
+# Built Visual Studio Code Extensions
+*.vsix
+
+# JetBrains
+.idea/
+*.swp
+*.swo
+
+# Vim
+*~
+*.swp
+*.swo
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# =====================================================
+# TESTING & COVERAGE
+# =====================================================
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+# =====================================================
+# TEMPORARY & MISC FILES
+# =====================================================
+*.tmp
+*.temp
+*.bak
+*.backup
+*~
+.DS_Store?
+
+# Project specific temp files
+/temp/
+/tmp/
+performance_test*.py
+test_*.py
+*_test_*.py
+
+# =====================================================
+# SECURITY & SECRETS
+# =====================================================
+*.pem
+*.key
+*.cert
+*.crt
+.env.production
+secrets.json
+.secrets/
+
+# =====================================================
+# DEPLOYMENT & PRODUCTION
+# =====================================================
+.vercel
+.serverless/
+.terraform/
+*.tfstate
+*.tfstate.*
+
+# Docker
+.dockerignore
+Dockerfile*
+docker-compose*.yml
+.docker/
+
+# =====================================================
+# Custom
+# =====================================================
+tasks.txt
+strategy.txt
+prd.txt
+setup
+PYTHON_313_COMPATIBILITY.md
+ULTIMATE_CHATTERBOX_IMPLEMENTATION.md
+CHATTERBOX_TTS_KNOWLEDGEBASE.md
+CHATTERBOX_QUICK_REFERENCE.md
+DEVELOPMENT.md
+frontend/e2e/
 .cursor/
-.cursor
+backend/tests/
