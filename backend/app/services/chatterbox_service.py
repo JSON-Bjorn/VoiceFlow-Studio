@@ -272,6 +272,10 @@ class ChatterboxService:
             os.getenv("TTS_ULTRA_FAST_MODE", "true").lower() == "true"
         )
 
+        # Set inference steps for ultra-fast performance
+        self.inference_steps = 10  # Ultra-fast inference steps
+        self.production_mode = True
+
         # Initialize emotion profiles for intelligent parameter optimization
         self.emotion_profiles = self._initialize_emotion_profiles()
 
@@ -347,95 +351,71 @@ class ChatterboxService:
         """Initialize enhanced voice profiles with Chatterbox-specific optimizations"""
         profiles = {}
 
-        # Predefined voice profiles with Chatterbox optimizations
-        profile_configs = [
-            {
-                "id": "alex",
-                "name": "Alex",
-                "description": "Professional male narrator",
-                "gender": "male",
-                "style": "professional",
-                "voice_characteristics": VoiceCharacteristic.NORMAL_SPEAKER,
-                "default_emotion_mode": EmotionMode.CONVERSATIONAL,
-                "optimal_cfg_weight": 0.5,
-                "optimal_exaggeration": 0.6,
-            },
-            {
-                "id": "sarah",
-                "name": "Sarah",
-                "description": "Warm female narrator",
-                "gender": "female",
-                "style": "warm",
-                "voice_characteristics": VoiceCharacteristic.SLOW_SPEAKER,
-                "default_emotion_mode": EmotionMode.CONVERSATIONAL,
-                "optimal_cfg_weight": 0.6,
-                "optimal_exaggeration": 0.5,
-            },
-            {
-                "id": "mike",
-                "name": "Mike",
-                "description": "Energetic male host",
-                "gender": "male",
-                "style": "energetic",
-                "voice_characteristics": VoiceCharacteristic.FAST_SPEAKER,
-                "default_emotion_mode": EmotionMode.EXPRESSIVE,
-                "optimal_cfg_weight": 0.4,
-                "optimal_exaggeration": 0.8,
-            },
-            {
-                "id": "emma",
-                "name": "Emma",
-                "description": "Expressive female storyteller",
-                "gender": "female",
-                "style": "expressive",
-                "voice_characteristics": VoiceCharacteristic.NORMAL_SPEAKER,
-                "default_emotion_mode": EmotionMode.EXPRESSIVE,
-                "optimal_cfg_weight": 0.4,
-                "optimal_exaggeration": 0.9,
-            },
-        ]
+        # 🎯 SYSTEM VOICES: Load only the 4 selected Mozilla voices from database
+        try:
+            from ..models.voice_profile import VoiceProfile as DBVoiceProfile
+            from ..core.database import get_db
+            from sqlalchemy.orm import Session
 
-        for config in profile_configs:
-            profiles[config["id"]] = VoiceProfile(**config)
+            # Get system voices from database
+            db: Session = next(get_db())
+            system_voices = (
+                db.query(DBVoiceProfile)
+                .filter(
+                    (DBVoiceProfile.user_id == None)
+                    | (DBVoiceProfile.is_system_default == True),
+                    DBVoiceProfile.is_active == True,
+                )
+                .all()
+            )
 
-        # Add podcast-specific voices with emotion optimization
-        podcast_voices = {
-            "host1": VoiceProfile(
-                id="host1",
-                name="Primary Host",
-                description="Main podcast host",
-                gender="male",
-                style="conversational",
-                voice_characteristics=VoiceCharacteristic.NORMAL_SPEAKER,
-                default_emotion_mode=EmotionMode.CONVERSATIONAL,
-                optimal_cfg_weight=0.5,
-                optimal_exaggeration=0.6,
-            ),
-            "host2": VoiceProfile(
-                id="host2",
-                name="Co-Host",
-                description="Secondary podcast host",
-                gender="female",
-                style="friendly",
-                voice_characteristics=VoiceCharacteristic.FAST_SPEAKER,
-                default_emotion_mode=EmotionMode.CONVERSATIONAL,
-                optimal_cfg_weight=0.4,
-                optimal_exaggeration=0.7,
-            ),
-            "narrator": VoiceProfile(
-                id="narrator",
-                name="Narrator",
-                description="Story narrator",
-                gender="neutral",
-                style="authoritative",
-                voice_characteristics=VoiceCharacteristic.SLOW_SPEAKER,
-                default_emotion_mode=EmotionMode.NEUTRAL,
-                optimal_cfg_weight=0.6,
-                optimal_exaggeration=0.4,
-            ),
-        }
+            # Convert database voices to chatterbox voice profiles
+            for db_voice in system_voices:
+                profiles[db_voice.voice_id] = VoiceProfile(
+                    id=db_voice.voice_id,
+                    name=db_voice.name,
+                    description=db_voice.description,
+                    gender=db_voice.gender,
+                    style=db_voice.style or "system",
+                    audio_prompt_path=db_voice.original_audio_path,  # Use the actual voice files from system_voices
+                    is_custom=True,  # All system voices are custom
+                    voice_characteristics=VoiceCharacteristic.NORMAL_SPEAKER,
+                    default_emotion_mode=EmotionMode.CONVERSATIONAL,
+                    optimal_cfg_weight=db_voice.optimal_cfg_weight or 0.5,
+                    optimal_exaggeration=db_voice.optimal_exaggeration or 0.5,
+                    optimal_temperature=db_voice.optimal_temperature or 0.7,
+                )
 
-        profiles.update(podcast_voices)
+            print(f"✅ Loaded {len(profiles)} system voices from database")
+
+        except Exception as e:
+            print(f"⚠️ Failed to load system voices from database: {e}")
+            # Fallback to Maya/Sofia voices instead of David/Marcus
+            profiles = {
+                "system_maya_engaging_female_american_91844": VoiceProfile(
+                    id="system_maya_engaging_female_american_91844",
+                    name="Maya Engaging (Fallback)",
+                    description="Fallback voice",
+                    gender="female",
+                    style="professional",
+                    voice_characteristics=VoiceCharacteristic.NORMAL_SPEAKER,
+                    default_emotion_mode=EmotionMode.CONVERSATIONAL,
+                    optimal_cfg_weight=0.5,
+                    optimal_exaggeration=0.6,
+                ),
+                "system_sofia_dynamic_female_american_80087": VoiceProfile(
+                    id="system_sofia_dynamic_female_american_80087",
+                    name="Sofia Dynamic (Fallback)",
+                    description="Fallback voice",
+                    gender="female",
+                    style="conversational",
+                    voice_characteristics=VoiceCharacteristic.NORMAL_SPEAKER,
+                    default_emotion_mode=EmotionMode.CONVERSATIONAL,
+                    optimal_cfg_weight=0.5,
+                    optimal_exaggeration=0.6,
+                ),
+            }
+
         return profiles
 
     def _load_model(self):
@@ -629,7 +609,8 @@ class ChatterboxService:
             # 🎯 INTELLIGENT PARAMETER OPTIMIZATION
             # Get voice profile for intelligent optimization
             voice_profile = self.voice_profiles.get(
-                voice_id, self.voice_profiles.get("alex")
+                voice_id,
+                self.voice_profiles.get("system_maya_engaging_female_american_91844"),
             )
 
             # Auto-detect emotion mode if not specified
@@ -1076,7 +1057,8 @@ class ChatterboxService:
                 watermark_confidence = await self._detect_watermark(audio_data)
 
             voice_profile = self.voice_profiles.get(
-                voice_id, self.voice_profiles.get("alex")
+                voice_id,
+                list(self.voice_profiles.values())[0] if self.voice_profiles else None,
             )
 
             return TTSResponse(
@@ -1372,7 +1354,7 @@ class ChatterboxService:
     async def convert_text_to_speech_stream(
         self,
         text: str,
-        voice_id: str = "alex",
+        voice_id: str = "system_maya_engaging_female_american_91844",
         audio_prompt_path: Optional[str] = None,
         exaggeration: Optional[float] = None,
         cfg_weight: Optional[float] = None,
@@ -1397,7 +1379,7 @@ class ChatterboxService:
     async def generate_real_time_stream(
         self,
         text: str,
-        voice_id: str = "alex",
+        voice_id: str = "system_maya_engaging_female_american_91844",
         audio_prompt_path: Optional[str] = None,
         exaggeration: Optional[float] = None,
         cfg_weight: Optional[float] = None,
@@ -1434,7 +1416,8 @@ class ChatterboxService:
 
             # Get optimized parameters for emotion and voice
             voice_profile = self.voice_profiles.get(
-                voice_id, self.voice_profiles.get("alex")
+                voice_id,
+                self.voice_profiles.get("system_maya_engaging_female_american_91844"),
             )
 
             if emotion_mode is None:
@@ -1677,37 +1660,14 @@ class ChatterboxService:
         }
 
     def get_podcast_voices(self) -> Dict[str, Dict[str, Any]]:
-        """Get voice profiles optimized for podcast generation"""
-        return {
-            "host1": {
-                "id": "alex",
-                "name": "Alex (Host 1)",
-                "role": "primary_host",
-                "personality": "authoritative, analytical",
-                "voice_settings": {"style": "professional"},
-            },
-            "host2": {
-                "id": "sarah",
-                "name": "Sarah (Host 2)",
-                "role": "co_host",
-                "personality": "conversational, curious",
-                "voice_settings": {"style": "conversational"},
-            },
-            "expert": {
-                "id": "tech_expert",
-                "name": "Tech Expert",
-                "role": "guest_expert",
-                "personality": "knowledgeable, confident",
-                "voice_settings": {"style": "technical"},
-            },
-            "interviewer": {
-                "id": "interviewer",
-                "name": "Interviewer",
-                "role": "moderator",
-                "personality": "engaging, inquisitive",
-                "voice_settings": {"style": "curious"},
-            },
-        }
+        """
+        DEPRECATED: This method should NOT be used for podcast generation.
+        Users MUST explicitly select voices - no defaults allowed.
+        """
+        raise ValueError(
+            "❌ VOICE SELECTION REQUIRED: Users must explicitly select voices for podcast generation. "
+            "No default voices are provided. Please use dynamic_voice_profiles parameter."
+        )
 
     async def generate_podcast_segment(
         self,
@@ -1715,21 +1675,51 @@ class ChatterboxService:
         speaker_id: str,
         segment_type: str = "dialogue",
         voice_settings: Optional[Dict[str, Any]] = None,
+        dynamic_voice_profiles: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> TTSResponse:
-        """Generate audio for a podcast segment with specific speaker"""
-        voice_profiles = self.get_podcast_voices()
+        """Generate audio for a podcast segment with specific speaker - REQUIRES voice selection"""
+
+        # MANDATORY: dynamic_voice_profiles must be provided
+        if not dynamic_voice_profiles:
+            raise ValueError(
+                "❌ VOICE SELECTION REQUIRED: dynamic_voice_profiles parameter is mandatory. "
+                "Users must explicitly select voices for podcast generation. No defaults provided."
+            )
+
+        voice_profiles = dynamic_voice_profiles
+        logger.info(
+            f"🎯 CHATTERBOX: Using user-selected voices: {[v.get('voice_id', 'unknown') for v in voice_profiles.values()]}"
+        )
+
+        # MANDATORY: speaker_id must exist in voice_profiles
+        if speaker_id not in voice_profiles:
+            available_speakers = list(voice_profiles.keys())
+            raise ValueError(
+                f"❌ SPEAKER NOT FOUND: Speaker '{speaker_id}' not found in voice profiles. "
+                f"Available speakers: {available_speakers}. No fallback voices provided."
+            )
 
         # Get voice ID from speaker mapping
-        voice_id = "alex"  # default
-        audio_prompt_path = None
+        profile = voice_profiles[speaker_id]
+        voice_id = profile.get("voice_id") or profile.get("id")
 
-        if speaker_id in voice_profiles:
-            voice_id = voice_profiles[speaker_id]["id"]
+        if not voice_id:
+            raise ValueError(
+                f"❌ VOICE ID MISSING: No voice_id found for speaker '{speaker_id}'. "
+                f"Voice profile: {profile}"
+            )
+
+        logger.info(f"🎯 CHATTERBOX: Using voice_id for {speaker_id}: {voice_id}")
 
         # Check if there's a custom voice prompt for this speaker
         voice_profile = self.voice_profiles.get(voice_id)
         if voice_profile and voice_profile.audio_prompt_path:
             audio_prompt_path = voice_profile.audio_prompt_path
+        else:
+            # Set to None for system voices to avoid file not found errors
+            audio_prompt_path = None
+
+        logger.info(f"🔊 CHATTERBOX: Final voice_id being used: {voice_id}")
 
         return await self.convert_text_to_speech(
             text=text,
@@ -1740,7 +1730,7 @@ class ChatterboxService:
     async def generate_batch_tts(
         self,
         texts: List[str],
-        voice_id: str = "alex",
+        voice_id: str = "system_maya_engaging_female_american_91844",
         audio_prompt_path: Optional[str] = None,
         exaggeration: Optional[float] = None,
         cfg_weight: Optional[float] = None,
@@ -1776,7 +1766,8 @@ class ChatterboxService:
 
         # Get voice profile and emotion mode for consistency
         voice_profile = self.voice_profiles.get(
-            voice_id, self.voice_profiles.get("alex")
+            voice_id,
+            self.voice_profiles.get("system_maya_engaging_female_american_91844"),
         )
 
         if emotion_mode is None:
@@ -2071,16 +2062,18 @@ class ChatterboxService:
         voice_id: str,
         name: str,
         description: str,
-        audio_prompt_path: str,
+        audio_prompt_path: Optional[str],
         gender: str = "unknown",
         style: str = "custom",
     ) -> bool:
-        """Add a custom voice profile with audio prompt"""
+        """Add a custom voice profile with audio prompt optimized for similarity"""
         try:
-            if not os.path.exists(audio_prompt_path):
+            # Check audio file existence only if audio_prompt_path is provided
+            if audio_prompt_path is not None and not os.path.exists(audio_prompt_path):
                 logger.error(f"Audio prompt file not found: {audio_prompt_path}")
                 return False
 
+            # Create voice profile optimized for voice cloning similarity
             self.voice_profiles[voice_id] = VoiceProfile(
                 id=voice_id,
                 name=name,
@@ -2089,9 +2082,17 @@ class ChatterboxService:
                 style=style,
                 audio_prompt_path=audio_prompt_path,
                 is_custom=True,
+                # Optimized parameters for better voice similarity
+                voice_characteristics=VoiceCharacteristic.NORMAL_SPEAKER,
+                default_emotion_mode=EmotionMode.NEUTRAL,  # Neutral for better matching
+                optimal_cfg_weight=0.7,  # Higher for better prompt following
+                optimal_exaggeration=0.3,  # Lower for more natural sound
+                optimal_temperature=0.5,  # Lower for consistency
             )
 
-            logger.info(f"Added custom voice profile: {voice_id}")
+            logger.info(
+                f"Added custom voice profile: {voice_id} (optimized for similarity)"
+            )
             return True
 
         except Exception as e:

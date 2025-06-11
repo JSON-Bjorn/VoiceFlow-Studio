@@ -52,32 +52,11 @@ class VoiceAgent:
 
     def __init__(self):
         self.logger = logging.getLogger(f"{__name__}.VoiceAgent")
-        self.voice_profiles = {
-            "host1": {
-                "voice_id": "alex",
-                "name": "Alex (Host 1)",
-                "style": "professional",
-                "role": "primary_host",
-            },
-            "host2": {
-                "voice_id": "sarah",
-                "name": "Sarah (Host 2)",
-                "style": "conversational",
-                "role": "co_host",
-            },
-            "expert": {
-                "voice_id": "tech_expert",
-                "name": "Tech Expert",
-                "style": "technical",
-                "role": "guest_expert",
-            },
-            "interviewer": {
-                "voice_id": "interviewer",
-                "name": "Interviewer",
-                "style": "curious",
-                "role": "moderator",
-            },
-        }
+        # NO DEFAULT VOICE PROFILES - Users must select voices explicitly
+        self.voice_profiles = {}
+        logger.info(
+            "🚫 NO DEFAULT VOICES: Users must explicitly select voices for podcast generation"
+        )
 
     def is_available(self) -> bool:
         """Check if the voice generation service is available"""
@@ -124,6 +103,7 @@ class VoiceAgent:
         script_segments: List[Dict[str, Any]],
         voice_settings: Optional[Dict[str, Any]] = None,
         include_cost_estimate: bool = True,
+        podcast_id: Optional[str] = None,
     ) -> VoiceGenerationResult:
         """
         Generate voice audio for multiple script segments
@@ -136,6 +116,18 @@ class VoiceAgent:
         start_time = time.time()
 
         try:
+            # MANDATORY: Check if voice profiles are set up
+            if not self.voice_profiles:
+                result = VoiceGenerationResult(
+                    success=False,
+                    audio_segments=[],
+                    total_duration=0.0,
+                    total_cost=0.0,
+                    processing_time=0.0,
+                )
+                result.error_message = "❌ VOICE SELECTION REQUIRED: No voice profiles configured. Users must explicitly select voices before generating audio."
+                return result
+
             if not self.is_available():
                 result = VoiceGenerationResult(
                     success=False,
@@ -152,6 +144,9 @@ class VoiceAgent:
             total_cost = 0.0
 
             self.logger.info(f"Generating voice for {len(script_segments)} segments")
+            self.logger.info(
+                f"🎯 Using user-selected voice profiles: {list(self.voice_profiles.keys())}"
+            )
 
             for i, segment in enumerate(script_segments):
                 segment_start = time.time()
@@ -159,29 +154,40 @@ class VoiceAgent:
                 try:
                     # Extract segment information
                     text = segment.get("text", "")
-                    speaker_id = segment.get("speaker", "host1")
+                    speaker_id = segment.get("speaker", "host_1")
                     segment_type = segment.get("type", "dialogue")
 
                     if not text.strip():
                         self.logger.warning(f"Skipping empty segment {i}")
                         continue
 
-                    # Get voice profile for speaker
-                    voice_profile = self.voice_profiles.get(
-                        speaker_id, self.voice_profiles["host1"]
-                    )
+                    # Get voice profile for speaker - NO FALLBACKS
+                    if speaker_id not in self.voice_profiles:
+                        raise ValueError(
+                            f"❌ SPEAKER NOT CONFIGURED: Speaker '{speaker_id}' not found in voice profiles. "
+                            f"Available speakers: {list(self.voice_profiles.keys())}. No fallback voices provided."
+                        )
+
+                    voice_profile = self.voice_profiles[speaker_id]
                     voice_id = voice_profile["voice_id"]
 
                     self.logger.info(
                         f"Generating audio for segment {i}: {speaker_id} ({voice_id})"
                     )
+                    logger.error(
+                        f"🔊 SEGMENT {i}: speaker={speaker_id}, voice_id={voice_id}"
+                    )
+                    logger.error(
+                        f"🔊 PASSING PROFILES TO CHATTERBOX: {self.voice_profiles}"
+                    )
 
-                    # Generate audio using Chatterbox
+                    # Generate audio using Chatterbox with dynamic voice profiles
                     tts_response = await chatterbox_service.generate_podcast_segment(
                         text=text,
                         speaker_id=speaker_id,
                         segment_type=segment_type,
                         voice_settings=voice_settings,
+                        dynamic_voice_profiles=self.voice_profiles,  # Pass current voice profiles
                     )
 
                     if tts_response.success:
@@ -190,14 +196,14 @@ class VoiceAgent:
                         segment_id = f"segment_{i}_{speaker_id}_{int(time.time())}"
 
                         # Save using storage service with proper podcast ID structure
-                        # Use a temporary podcast ID for segments if none provided
-                        temp_podcast_id = "segments"
+                        # Use the provided podcast ID or fallback to "segments"
+                        temp_podcast_id = podcast_id if podcast_id else "segments"
 
                         file_path = await storage_service.save_audio_file(
                             audio_data=tts_response.audio_data,
                             podcast_id=temp_podcast_id,
                             segment_id=segment_id,
-                            file_type="wav",
+                            file_type="mp3",
                             metadata={
                                 "speaker_id": speaker_id,
                                 "text_preview": text[:100] + "..."
@@ -356,7 +362,7 @@ class VoiceAgent:
     async def generate_single_segment(
         self,
         text: str,
-        speaker_id: str = "host1",
+        speaker_id: str = "host_1",
         voice_settings: Optional[Dict[str, Any]] = None,
     ) -> VoiceSegment:
         """Generate voice for a single text segment"""
@@ -366,7 +372,7 @@ class VoiceAgent:
 
             # Get voice profile
             voice_profile = self.voice_profiles.get(
-                speaker_id, self.voice_profiles["host1"]
+                speaker_id, self.voice_profiles["host_1"]
             )
             voice_id = voice_profile["voice_id"]
 
@@ -375,6 +381,7 @@ class VoiceAgent:
                 text=text,
                 speaker_id=speaker_id,
                 voice_settings=voice_settings,
+                dynamic_voice_profiles=self.voice_profiles,  # Pass current voice profiles
             )
 
             return VoiceSegment(
@@ -401,6 +408,20 @@ class VoiceAgent:
         """Get available voice profiles"""
         return self.voice_profiles.copy()
 
+    def get_clean_speaker_names(self) -> Dict[str, str]:
+        """Get clean speaker names (first name only) for script generation"""
+        logger.error(f"🎭 GET_CLEAN_NAMES called with profiles: {self.voice_profiles}")
+
+        clean_names = {}
+        for profile_id, profile_data in self.voice_profiles.items():
+            full_name = profile_data.get("name", f"Host {profile_id[-1]}")
+            # Extract first name (before any space or descriptor)
+            clean_name = full_name.split()[0] if " " in full_name else full_name
+            clean_names[profile_id] = clean_name
+
+        logger.error(f"🎭 CLEAN NAMES RESULT: {clean_names}")
+        return clean_names
+
     def get_voice_profile(self, speaker_id: str) -> Optional[Dict[str, Any]]:
         """Get specific voice profile"""
         return self.voice_profiles.get(speaker_id)
@@ -410,7 +431,7 @@ class VoiceAgent:
     ) -> Dict[str, Any]:
         """Test voice generation with sample text"""
         try:
-            segment = await self.generate_single_segment(text, "host1")
+            segment = await self.generate_single_segment(text, "host_1")
 
             return {
                 "success": segment.success,

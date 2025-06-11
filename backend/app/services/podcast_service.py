@@ -23,6 +23,13 @@ class PodcastService:
         if user.credits < 1:
             raise ValueError("Insufficient credits to create podcast")
 
+        # Validate voice settings if provided
+        voice_settings_dict = None
+        if podcast_data.voice_settings:
+            voice_settings_dict = self._validate_and_prepare_voice_settings(
+                user_id, podcast_data.voice_settings
+            )
+
         # Create the podcast
         podcast = Podcast(
             user_id=user_id,
@@ -30,6 +37,7 @@ class PodcastService:
             topic=podcast_data.topic,
             length=podcast_data.length,
             status=PodcastStatus.PENDING,
+            voice_settings=voice_settings_dict,
         )
 
         self.db.add(podcast)
@@ -45,6 +53,47 @@ class PodcastService:
         self.db.commit()
         self.db.refresh(podcast)
         return podcast
+
+    def _validate_and_prepare_voice_settings(
+        self, user_id: int, voice_settings
+    ) -> dict:
+        """Validate voice settings and ensure user has access to selected voices"""
+        from ..models.voice_profile import VoiceProfile
+
+        settings_dict = voice_settings.model_dump()
+
+        # If using custom voices, validate that the user owns the selected voices
+        if settings_dict.get("use_custom_voices", False):
+            voice_ids = [
+                settings_dict.get("host1_voice_id"),
+                settings_dict.get("host2_voice_id"),
+            ]
+
+            # Filter out None values
+            voice_ids = [vid for vid in voice_ids if vid is not None]
+
+            if voice_ids:
+                # Check that all custom voice IDs belong to the user
+                user_voices = (
+                    self.db.query(VoiceProfile)
+                    .filter(
+                        VoiceProfile.user_id == user_id,
+                        VoiceProfile.voice_id.in_(voice_ids),
+                        VoiceProfile.is_active == True,
+                    )
+                    .all()
+                )
+
+                user_voice_ids = {voice.voice_id for voice in user_voices}
+
+                # Validate each voice ID
+                for voice_id in voice_ids:
+                    if voice_id not in user_voice_ids:
+                        raise ValueError(
+                            f"Voice '{voice_id}' not found or not accessible"
+                        )
+
+        return settings_dict
 
     def get_user_podcasts(
         self,

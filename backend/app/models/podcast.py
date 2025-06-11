@@ -41,6 +41,9 @@ class Podcast(Base):
     voice_generation_cost = Column(String, nullable=True)  # Cost in USD
     audio_file_paths = Column(JSON, nullable=True)  # List of file paths
 
+    # Voice settings for podcast generation
+    voice_settings = Column(JSON, nullable=True)  # Voice configuration for each speaker
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

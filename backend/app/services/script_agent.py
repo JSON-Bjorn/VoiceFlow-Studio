@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional, Any
 from .openai_service import OpenAIService
+from .voice_name_resolver import VoiceNameResolver
 import logging
 import json
 
@@ -19,14 +20,46 @@ class ScriptAgent:
 
     def __init__(self):
         self.openai_service = OpenAIService()
+        # Remove hardcoded names - will get names dynamically from voice profiles
         self.default_hosts = {
             "host_1": {
-                "name": "Felix",
+                "name": "Host 1",  # Will be replaced dynamically
                 "personality": "analytical and engaging host",
                 "role": "primary_questioner",
             },
             "host_2": {
-                "name": "Bjorn",
+                "name": "Host 2",  # Will be replaced dynamically
+                "personality": "warm and curious host",
+                "role": "storyteller",
+            },
+        }
+
+    def get_dynamic_host_config(self, voice_profiles: Dict[str, Any]) -> Dict[str, Any]:
+        """Get host configuration from voice profiles dynamically"""
+        return {
+            "host_1": {
+                "name": voice_profiles.get("host_1", {}).get("name", "Host 1"),
+                "personality": "analytical and engaging host",
+                "role": "primary_questioner",
+            },
+            "host_2": {
+                "name": voice_profiles.get("host_2", {}).get("name", "Host 2"),
+                "personality": "warm and curious host",
+                "role": "storyteller",
+            },
+        }
+
+    def get_clean_voice_host_config(self, voice_agent) -> Dict[str, Any]:
+        """Get host configuration using clean voice names (e.g., 'David', 'Marcus')"""
+        clean_names = voice_agent.get_clean_speaker_names()
+        return {
+            "host_1": {
+                "name": clean_names.get("host_1", "Host 1"),
+                "personality": "analytical and engaging host",
+                "role": "primary_questioner",
+            },
+            "host_2": {
+                "name": clean_names.get("host_2", "Host 2"),
                 "personality": "warm and curious host",
                 "role": "storyteller",
             },
@@ -35,15 +68,15 @@ class ScriptAgent:
     def _get_default_host_personalities(self) -> Dict[str, Any]:
         """Define default host personalities"""
         return {
-            "felix": {
-                "name": "Alex",
+            "host_1": {
+                "name": "Host 1",
                 "personality": "Curious and analytical, asks probing questions, likes to dig deeper into topics",
                 "speaking_style": "Thoughtful, uses phrases like 'That's fascinating' and 'Help me understand'",
                 "role": "primary_questioner",
                 "voice_characteristics": "calm, measured, slightly lower pitch",
             },
-            "bjorn": {
-                "name": "Bjorn",
+            "host_2": {
+                "name": "Host 2",
                 "personality": "Enthusiastic and relatable, brings topics down to earth, shares personal connections",
                 "speaking_style": "Energetic, uses phrases like 'Oh wow' and 'That reminds me of'",
                 "role": "enthusiastic_responder",
@@ -57,6 +90,9 @@ class ScriptAgent:
         target_length: int = 10,
         host_personalities: Optional[Dict] = None,
         style_preferences: Optional[Dict] = None,
+        voice_profiles: Optional[Dict[str, Any]] = None,
+        user_inputs: Optional[Dict[str, Any]] = None,
+        use_clean_voice_names: bool = True,
     ) -> Optional[Dict[str, Any]]:
         """
         Generate a complete podcast script from research data
@@ -66,6 +102,9 @@ class ScriptAgent:
             target_length: Target length in minutes
             host_personalities: Custom host personalities (optional)
             style_preferences: Style preferences for the script
+            voice_profiles: Voice profiles for dynamic name resolution
+            user_inputs: User inputs for enhanced name resolution
+            use_clean_voice_names: Whether to use clean voice names (e.g., "David") as speakers
 
         Returns:
             Complete podcast script with dialogue and timing
@@ -74,13 +113,51 @@ class ScriptAgent:
             f"Generating script for topic: {research_data.get('main_topic', 'Unknown')}"
         )
 
-        # Use custom hosts or defaults
-        hosts = host_personalities or self.default_hosts
+        # Determine host configuration strategy
+        if use_clean_voice_names and hasattr(self, "_voice_agent_ref"):
+            # Use clean voice names from voice agent
+            logger.error(f"🎭 SCRIPT AGENT: Using clean voice names from voice agent")
+            logger.error(
+                f"🎭 SCRIPT AGENT: Voice agent profiles: {self._voice_agent_ref.voice_profiles}"
+            )
+            hosts = self.get_clean_voice_host_config(self._voice_agent_ref)
+            logger.error(f"🎭 SCRIPT AGENT: Generated host config: {hosts}")
+            logger.info(
+                f"Using clean voice names as speakers: {[h['name'] for h in hosts.values()]}"
+            )
+
+        elif voice_profiles or user_inputs:
+            # Use Voice Name Resolver for enhanced dynamic name resolution (custom names)
+            resolver = VoiceNameResolver()
+
+            # Resolve host names dynamically
+            if user_inputs:
+                resolved_host_names = resolver.resolve_host_names(
+                    user_inputs, voice_profiles
+                )
+                enhanced_host_config = resolver.create_enhanced_host_config(
+                    user_inputs, voice_profiles
+                )
+                hosts = enhanced_host_config
+
+                logger.info(
+                    f"Using enhanced dynamic host configuration: {resolved_host_names}"
+                )
+            else:
+                # Fallback to basic voice profile dynamic configuration
+                hosts = self.get_dynamic_host_config(voice_profiles)
+                logger.info(
+                    f"Using basic dynamic host configuration from voice profiles"
+                )
+        else:
+            # Use custom hosts or defaults
+            hosts = host_personalities or self.default_hosts
+            logger.info(f"Using provided host personalities or defaults")
 
         # Apply style preferences
         style = self._apply_style_preferences(style_preferences)
 
-        # Generate the script using OpenAI
+        # Generate the script using OpenAI with resolved host names
         script_data = self.openai_service.generate_podcast_script(
             research_data=research_data,
             target_length=target_length,
@@ -94,7 +171,19 @@ class ScriptAgent:
         # Enhance script with additional metadata and structure
         enhanced_script = self._enhance_script(script_data, research_data, style)
 
-        logger.info("Script generation completed")
+        # Add voice resolution metadata for debugging and validation
+        enhanced_script["voice_resolution_metadata"] = {
+            "resolver_used": True,
+            "voice_profiles_available": voice_profiles is not None,
+            "user_inputs_provided": user_inputs is not None,
+            "use_clean_voice_names": use_clean_voice_names,
+            "resolved_hosts": list(hosts.keys()) if hosts else [],
+            "host_names": {k: v.get("name", "Unknown") for k, v in hosts.items()}
+            if hosts
+            else {},
+        }
+
+        logger.info("Script generation completed with voice-based speaker names")
         return enhanced_script
 
     def _apply_style_preferences(

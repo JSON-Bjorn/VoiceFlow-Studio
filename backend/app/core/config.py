@@ -1,5 +1,10 @@
 """
 Configuration settings for VoiceFlow Studio Backend
+
+PYTHON VERSION: 3.11 REQUIRED
+- Chatterbox TTS compatibility: Python >=3.9.0,<3.13
+- Optimal AI/ML library support with Python 3.11
+- Production-ready PyTorch wheels available
 """
 
 import os
@@ -85,7 +90,7 @@ class Settings(BaseSettings):
     api_v1_str: str = "/api/v1"
 
     # Database
-    database_url: str = Field(default="sqlite:///./app.db")
+    database_url: str = Field(default="sqlite:///./voiceflow_studio.db")
 
     # Security
     secret_key: str = Field(default="your-secret-key-here")
@@ -100,8 +105,8 @@ class Settings(BaseSettings):
     frontend_url: str = Field(default="http://localhost:3000")
 
     # Stripe (for credits/payments)
-    stripe_publishable_key: str = Field(default="")
-    stripe_secret_key: str = Field(default="")
+    stripe_publishable_key: str = Field(default="")  # Frontend/public key
+    stripe_api_key: str = Field(default="")  # Backend/secret key
     stripe_webhook_secret: str = Field(default="")
 
     # External APIs
@@ -195,7 +200,7 @@ settings = Settings()
 
 # Legacy exports for backward compatibility
 openai_api_key: Optional[str] = settings.openai_api_key
-stripe_api_key: Optional[str] = settings.stripe_secret_key  # Map to stripe_secret_key
+stripe_api_key: Optional[str] = settings.stripe_api_key
 stripe_publishable_key: Optional[str] = settings.stripe_publishable_key
 stripe_webhook_secret: Optional[str] = settings.stripe_webhook_secret
 jwt_secret_key: str = settings.jwt_secret_key

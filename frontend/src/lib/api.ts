@@ -75,14 +75,22 @@ export interface Podcast {
     audio_total_duration?: number
     voice_generation_cost?: string
     audio_file_paths?: string[]
+    voice_settings?: VoiceSelectionSettings
     created_at: string
     updated_at?: string
+}
+
+export interface VoiceSelectionSettings {
+    host1_voice_id?: string
+    host2_voice_id?: string
+    use_custom_voices?: boolean
 }
 
 export interface PodcastCreate {
     title: string
     topic: string
     length: number
+    voice_settings?: VoiceSelectionSettings
 }
 
 export interface PodcastListResponse {
@@ -143,9 +151,16 @@ class ApiClient {
     ): Promise<T> {
         const url = `${this.baseUrl}${endpoint}`
 
-        const headers: Record<string, string> = {
-            'Content-Type': 'application/json',
-            ...(options.headers as Record<string, string>),
+        const headers: Record<string, string> = {}
+
+        // Only set Content-Type if not FormData
+        if (!(options.body instanceof FormData)) {
+            headers['Content-Type'] = 'application/json'
+        }
+
+        // Add custom headers
+        if (options.headers) {
+            Object.assign(headers, options.headers)
         }
 
         if (this.token) {
@@ -161,9 +176,32 @@ class ApiClient {
         })
 
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}))
+            let errorData: any = {}
+            let errorMessage = `HTTP error! status: ${response.status}`
+
+            try {
+                errorData = await response.json()
+                if (errorData.detail) {
+                    if (typeof errorData.detail === 'string') {
+                        errorMessage = errorData.detail
+                    } else if (Array.isArray(errorData.detail)) {
+                        // Handle FastAPI validation errors
+                        errorMessage = errorData.detail.map((err: any) =>
+                            `${err.loc?.join(' -> ') || 'Field'}: ${err.msg || err.detail || 'Invalid'}`
+                        ).join(', ')
+                    } else {
+                        errorMessage = JSON.stringify(errorData.detail)
+                    }
+                } else if (errorData.message) {
+                    errorMessage = errorData.message
+                }
+            } catch (parseError) {
+                console.error('Failed to parse error response:', parseError)
+                errorMessage = `HTTP ${response.status} - ${response.statusText}`
+            }
+
             console.error(`API Error ${response.status} for ${endpoint}:`, errorData)
-            throw new Error(errorData.detail || `HTTP error! status: ${response.status}`)
+            throw new Error(errorMessage)
         }
 
         return response.json()
@@ -391,12 +429,12 @@ class ApiClient {
                 assemble_audio: options?.assemble_audio ?? true,
                 hosts: options?.hostPersonalities || {
                     host_1: {
-                        name: "Felix",
+                        name: "Host 1",
                         personality: "analytical, thoughtful, engaging",
                         role: "primary_questioner"
                     },
                     host_2: {
-                        name: "Bjorn",
+                        name: "Host 2",
                         personality: "warm, curious, conversational",
                         role: "storyteller"
                     }
@@ -563,6 +601,38 @@ class ApiClient {
         health: any;
     }> {
         return this.request(`/api/chatterbox/config`);
+    }
+
+    async getUserVoices(): Promise<{
+        success: boolean;
+        voices: Array<{
+            id: number;
+            voice_id: string;
+            name: string;
+            description: string;
+            gender: string;
+            style: string;
+            voice_sample_url?: string;
+            test_audio_url?: string;
+            created_at: string;
+            file_info: {
+                filename: string;
+                content_type: string;
+                size: number;
+                duration?: number;
+            };
+            optimization_params: {
+                similarity_boost: number;
+                stability: number;
+                style: number;
+                exaggeration: number;
+                cfg_weight: number;
+                temperature: number;
+            };
+        }>;
+        total: number;
+    }> {
+        return this.request('/api/chatterbox/my-voices')
     }
 
     // Stripe payment endpoints

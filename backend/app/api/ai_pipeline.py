@@ -339,12 +339,12 @@ async def generate_enhanced_podcast(
                 "hosts",
                 {
                     "host_1": {
-                        "name": "Felix",
+                        "name": "Host 1",
                         "personality": "analytical, thoughtful, engaging",
                         "role": "primary_questioner",
                     },
                     "host_2": {
-                        "name": "Bjorn",
+                        "name": "Host 2",
                         "personality": "warm, curious, conversational",
                         "role": "storyteller",
                     },
@@ -382,6 +382,12 @@ async def generate_enhanced_podcast(
                 },
             ),
         }
+
+        # 🌐 DEBUG: Log incoming request data
+        logger.error(
+            f"🌐 INCOMING REQUEST HOSTS: {custom_settings.get('hosts', 'NO HOSTS')}"
+        )
+        logger.error(f"🌐 FULL CUSTOM SETTINGS: {custom_settings}")
 
         # Start enhanced generation
         logger.info(

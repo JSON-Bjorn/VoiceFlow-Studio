@@ -20,7 +20,7 @@ def get_db():
 async def init_db():
     """Initialize the database by creating all tables"""
     # Import all models to ensure they are registered with Base
-    from app.models import user, podcast, credit_transaction
+    from app.models import user, podcast, credit_transaction, voice_profile
 
     # Create all tables
     Base.metadata.create_all(bind=engine)

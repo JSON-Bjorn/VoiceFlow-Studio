@@ -5,11 +5,17 @@ FastAPI application for the VoiceFlow Studio podcast generation platform.
 """
 
 import logging
+import warnings
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
 import sys
+
+# Suppress PyTorch FutureWarning from Chatterbox TTS library
+warnings.filterwarnings(
+    "ignore", message="You are using `torch.load` with `weights_only=False`"
+)
 
 # Add the parent directory to the path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -29,6 +35,7 @@ from app.api import (
     audio,
     websocket,
     error_monitoring,
+    quality,
 )
 
 # Load environment variables
@@ -69,6 +76,7 @@ app.include_router(ai_pipeline.router)
 app.include_router(storage.router)
 app.include_router(audio.router)
 app.include_router(error_monitoring.router, prefix="/api/errors")
+app.include_router(quality.router)
 
 # Include WebSocket routes
 app.include_router(websocket.router)

@@ -138,7 +138,7 @@ class AudioAgent:
 
         # Asset storage
         self.audio_assets: Dict[str, AudioAsset] = {}
-        self.asset_directory = "backend/storage/audio/assets"
+        self.asset_directory = "storage/audio/assets"
 
         # Check dependencies
         if not PYDUB_AVAILABLE:

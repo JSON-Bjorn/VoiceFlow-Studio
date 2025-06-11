@@ -15,7 +15,10 @@ import {
     Trash2,
     Eye,
     Loader2,
-    Bug
+    Bug,
+    Volume2,
+    HardDrive,
+    Radio
 } from 'lucide-react';
 import {
     DropdownMenu,
@@ -222,6 +225,28 @@ Audio Debug for "${podcast.title}":
                         {formatDistanceToNow(new Date(podcast.created_at), { addSuffix: true })}
                     </div>
                 </div>
+
+                {/* Audio Quality Indicators */}
+                {canPlay && (
+                    <div className="mb-4 p-2 bg-slate-700/30 rounded-lg border border-slate-600/50">
+                        <div className="flex items-center justify-between text-xs">
+                            <span className="text-gray-300 font-medium">Audio Quality</span>
+                            <Badge variant="outline" className="text-green-400 border-green-500/30 bg-green-500/10">
+                                MP3 • 128kbps
+                            </Badge>
+                        </div>
+                        <div className="flex items-center justify-between mt-2 text-xs text-gray-400">
+                            <div className="flex items-center">
+                                <Radio className="mr-1 h-3 w-3" />
+                                44.1kHz • Stereo
+                            </div>
+                            <div className="flex items-center">
+                                <HardDrive className="mr-1 h-3 w-3" />
+                                {podcast.length ? `~${Math.round(podcast.length * 0.96)}MB` : 'N/A'}
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 <div className="flex items-center justify-between gap-2">
                     {/* Play/Generate Button */}

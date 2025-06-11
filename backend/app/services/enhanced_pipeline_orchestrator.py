@@ -2,6 +2,7 @@ from typing import Dict, List, Optional, Any, Callable
 from datetime import datetime
 import logging
 import asyncio
+import json
 import time
 from .websocket_manager import websocket_manager
 from ..models.podcast import Podcast
@@ -13,8 +14,10 @@ from .content_planning_agent import ContentPlanningAgent
 from .conversation_flow_agent import ConversationFlowAgent
 from .dialogue_distribution_agent import DialogueDistributionAgent
 from .personality_adaptation_agent import PersonalityAdaptationAgent
-from .voice_agent import VoiceAgent
+from .voice_agent import voice_agent
 from .audio_agent import AudioAgent
+from .voice_name_resolver import VoiceNameResolver
+from .voice_assignment_validator import VoiceAssignmentValidator
 from sqlalchemy.orm import Session
 from .error_handler import (
     error_handler,
@@ -24,6 +27,21 @@ from .error_handler import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Set up file logging for detailed debugging
+import os
+
+os.makedirs("storage", exist_ok=True)
+file_handler = logging.FileHandler("storage/generation_debug.log")
+file_handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+file_handler.setFormatter(formatter)
+
+# Create a separate logger for file-only detailed logging
+file_logger = logging.getLogger("generation_debug")
+file_logger.setLevel(logging.DEBUG)
+file_logger.addHandler(file_handler)
+file_logger.propagate = False  # Don't send to console
 
 
 class EnhancedPipelineOrchestrator:
@@ -43,7 +61,7 @@ class EnhancedPipelineOrchestrator:
         self.script_agent = ScriptAgent()
         self.dialogue_distribution_agent = DialogueDistributionAgent()
         self.personality_adaptation_agent = PersonalityAdaptationAgent()
-        self.voice_agent = VoiceAgent()
+        self.voice_agent = voice_agent
         self.audio_agent = AudioAgent()
 
         # Enhanced error handling
@@ -56,6 +74,7 @@ class EnhancedPipelineOrchestrator:
 
         # Quality thresholds
         self.quality_thresholds = {
+            "research_quality": 0.7,
             "minimum_research_quality": 0.7,
             "minimum_content_plan_quality": 0.75,
             "minimum_script_quality": 0.8,
@@ -103,6 +122,20 @@ class EnhancedPipelineOrchestrator:
         """
         logger.info(f"Starting enhanced podcast generation for ID: {podcast_id}")
 
+        # Setup user-selected voice profiles before pipeline execution
+        self.setup_voice_profiles_from_user_inputs(user_inputs)
+        logger.error(f"🔍 CHECKPOINT after setup: {self.voice_agent.voice_profiles}")
+
+        # Log pipeline start with user inputs for debugging
+        debug_file = f"pipeline_start_{int(time.time() * 1000000)}.txt"
+        try:
+            with open(debug_file, "w") as f:
+                f.write(f"Enhanced pipeline started at {time.time()}\\n")
+                f.write(f"user_inputs: {user_inputs}\\n")
+                f.write(f"generate_voice: {user_inputs.get('generate_voice')}\\n")
+        except Exception as e:
+            logger.warning(f"Could not write debug file: {e}")
+
         # Get podcast and user info for WebSocket updates
         podcast = self.podcast_service.get_podcast_by_id(podcast_id, user_id)
         if not podcast:
@@ -141,8 +174,6 @@ class EnhancedPipelineOrchestrator:
 
         try:
             # Create debug file to track pipeline start
-            import time
-
             pipeline_debug = f"pipeline_start_{int(time.time())}.txt"
             with open(pipeline_debug, "w") as f:
                 f.write(f"Enhanced pipeline started at {time.time()}\n")
@@ -193,6 +224,9 @@ class EnhancedPipelineOrchestrator:
                 )
 
             # Phase 3: Iterative Script Generation with Enhanced Error Handling
+            logger.error(
+                f"🔍 CHECKPOINT before script generation: {self.voice_agent.voice_profiles}"
+            )
             await send_progress(
                 "script_generation", 50, "Generating and refining script"
             )
@@ -219,13 +253,14 @@ class EnhancedPipelineOrchestrator:
                 )
 
             # Phase 4: Voice Generation with Circuit Breaker Protection
+            logger.error(
+                f"🔍 CHECKPOINT before voice generation: {self.voice_agent.voice_profiles}"
+            )
             voice_result = None
             generate_voice_enabled = user_inputs.get("generate_voice", False)
             voice_agent_available = self.voice_agent.is_available()
 
             # Create debug file to track condition check
-            import time
-
             debug_file = f"voice_condition_check_{int(time.time())}.txt"
             with open(debug_file, "w") as f:
                 f.write(f"Voice condition check at {time.time()}\n")
@@ -281,6 +316,47 @@ class EnhancedPipelineOrchestrator:
                 f"  - assemble_audio setting: {user_inputs.get('assemble_audio', True)}"
             )
 
+            # Log detailed debug info to file
+            file_logger.info(f"=== AUDIO ASSEMBLY DEBUG - Podcast {podcast_id} ===")
+            file_logger.info(
+                f"Voice result: {json.dumps(voice_result, indent=2, default=str)}"
+            )
+            file_logger.info(
+                f"User inputs: {json.dumps(user_inputs, indent=2, default=str)}"
+            )
+            file_logger.info(
+                f"Audio agent available: {self.audio_agent.is_available()}"
+            )
+
+            # DEBUG: Log voice_result structure
+            if voice_result:
+                logger.info(f"  - voice_result keys: {list(voice_result.keys())}")
+                if voice_result.get("data"):
+                    logger.info(
+                        f"  - voice_result.data keys: {list(voice_result['data'].keys())}"
+                    )
+                    if voice_result["data"].get("segments"):
+                        logger.info(
+                            f"  - segments count: {len(voice_result['data']['segments'])}"
+                        )
+                        logger.info(
+                            f"  - first segment keys: {list(voice_result['data']['segments'][0].keys()) if voice_result['data']['segments'] else 'no segments'}"
+                        )
+                        # Log file paths to debug file
+                        file_logger.info(f"Voice segments file paths:")
+                        for i, seg in enumerate(
+                            voice_result["data"]["segments"][:5]
+                        ):  # Log first 5
+                            file_logger.info(
+                                f"  Segment {i}: {seg.get('file_path', 'NO FILE PATH')}"
+                            )
+                    else:
+                        logger.info(f"  - NO SEGMENTS in voice_result.data")
+                else:
+                    logger.info(f"  - NO DATA in voice_result")
+            else:
+                logger.info(f"  - voice_result is None")
+
             if (
                 voice_result
                 and voice_result["success"]
@@ -292,6 +368,9 @@ class EnhancedPipelineOrchestrator:
                 )
                 logger.info("Starting audio assembly phase - all conditions met")
                 try:
+                    logger.info(
+                        f"DEBUG: Calling audio assembly with voice_result segments: {len(voice_result.get('data', {}).get('segments', []))}"
+                    )
                     audio_result = await self._execute_with_recovery(
                         self._audio_assembly_phase,
                         "audio_assembly_failure",
@@ -303,6 +382,14 @@ class EnhancedPipelineOrchestrator:
                     logger.info(
                         f"Audio assembly result: success={audio_result.get('success') if audio_result else None}"
                     )
+                    if audio_result and not audio_result.get("success"):
+                        logger.error(
+                            f"Audio assembly failed with error: {audio_result.get('error')}"
+                        )
+                    elif audio_result and audio_result.get("success"):
+                        logger.info(
+                            f"Audio assembly succeeded! Final path: {audio_result.get('data', {}).get('final_audio_path')}"
+                        )
                 except Exception as e:
                     logger.warning(
                         f"Audio assembly failed, continuing without assembled audio: {e}"
@@ -407,7 +494,11 @@ class EnhancedPipelineOrchestrator:
             )
 
             return await self._handle_generation_failure(
-                podcast_id, user_id, str(e), generation_state, error_details
+                podcast_id,
+                user_id,
+                str(e),
+                generation_state,
+                error_details,
             )
 
     def _initialize_enhanced_state(
@@ -567,6 +658,28 @@ class EnhancedPipelineOrchestrator:
             main_topic=topic, target_length=target_duration, depth="standard"
         )
 
+    def _generate_research_feedback(
+        self, validation: Dict[str, Any], content_prefs: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Generate feedback for research iteration improvement"""
+        feedback = {
+            "quality_issues": validation.get("issues", []),
+            "suggestions": validation.get("suggestions", []),
+            "content_preferences": content_prefs,
+            "improvement_areas": [],
+        }
+
+        # Add specific improvement suggestions based on quality score
+        quality_score = validation.get("quality_score", 0)
+        if quality_score < 60:
+            feedback["improvement_areas"].append("Increase depth of research")
+            feedback["improvement_areas"].append("Add more factual content")
+        elif quality_score < 80:
+            feedback["improvement_areas"].append("Improve discussion angles")
+            feedback["improvement_areas"].append("Enhance subtopic coverage")
+
+        return feedback
+
     async def _content_planning_phase(
         self,
         research_data: Dict[str, Any],
@@ -640,19 +753,40 @@ class EnhancedPipelineOrchestrator:
                         f"Script generation iteration {iteration + 1}/{max_iterations}",
                     )
 
-                # Generate script (adapting to ScriptAgent's method signature)
-                script_data = self.script_agent.generate_script(
+                # Generate enhanced script with personality adaptation
+                from .script_agent import ScriptAgent
+                from .personality_adaptation_agent import PersonalityAdaptationAgent
+
+                script_agent = ScriptAgent()
+                personality_agent = PersonalityAdaptationAgent()
+
+                # Pass voice agent reference for clean voice names
+                script_agent._voice_agent_ref = self.voice_agent
+
+                # Get current voice profiles and log them
+                current_voice_profiles = self.voice_agent.get_voice_profiles()
+                logger.error(f"🎭 SCRIPT GEN VOICE PROFILES: {current_voice_profiles}")
+
+                # Force refresh of voice profiles for script generation
+                logger.error(f"🎭 FORCING VOICE PROFILE REFRESH FOR SCRIPT GEN")
+                self.setup_voice_profiles_from_user_inputs(user_inputs)
+                refreshed_voice_profiles = self.voice_agent.get_voice_profiles()
+                logger.error(f"🎭 REFRESHED VOICE PROFILES: {refreshed_voice_profiles}")
+
+                # Base script generation with voice-based speaker names
+                base_script = script_agent.generate_script(
                     research_data=research_data,
                     target_length=user_inputs.get("target_duration", 10),
-                    host_personalities=user_inputs.get("hosts"),
-                    style_preferences=user_inputs.get("style_preferences"),
+                    voice_profiles=refreshed_voice_profiles,
+                    user_inputs=user_inputs,
+                    use_clean_voice_names=True,  # Enable clean voice names (e.g., "David", "Marcus")
                 )
 
                 script_result = {
-                    "success": script_data is not None,
-                    "data": script_data,
+                    "success": base_script is not None,
+                    "data": base_script,
                     "error": "Script generation failed"
-                    if script_data is None
+                    if base_script is None
                     else None,
                 }
 
@@ -718,7 +852,7 @@ class EnhancedPipelineOrchestrator:
         progress_update_callback: Optional[Callable] = None,
     ) -> Dict[str, Any]:
         """
-        Generate voice audio for script segments using ElevenLabs TTS
+        Generate voice audio for script segments using Chatterbox TTS
 
         Args:
             script_data: Generated script with segments
@@ -732,8 +866,6 @@ class EnhancedPipelineOrchestrator:
             logger.info("Starting voice generation phase")
 
             # Create a debug marker file to prove this method was called
-            import time
-
             debug_marker = f"voice_generation_called_{int(time.time())}.txt"
             with open(debug_marker, "w") as f:
                 f.write(f"Voice generation phase called at {time.time()}")
@@ -764,6 +896,74 @@ class EnhancedPipelineOrchestrator:
                     "data": None,
                 }
 
+            # NEW: Validate voice assignments BEFORE generation
+            logger.info("Validating voice assignments...")
+            validator = VoiceAssignmentValidator()
+            voice_profiles = self.voice_agent.get_voice_profiles()
+
+            validation_result = validator.comprehensive_validation(
+                script_segments, voice_profiles, user_inputs
+            )
+
+            # Log validation results with detailed debug information
+            logger.info(
+                f"Voice validation debug info: {validation_result.get('validations', {}).get('speaker_mapping', {}).get('debug_info', {})}"
+            )
+
+            if validation_result["overall_valid"]:
+                logger.info("✅ Voice assignment validation PASSED")
+                if validation_result["summary"]["total_warnings"] > 0:
+                    logger.warning(
+                        f"Voice validation warnings ({validation_result['summary']['total_warnings']}): {validation_result['summary']['recommendations']}"
+                    )
+            else:
+                logger.error("❌ Voice assignment validation FAILED")
+                critical_issues = validation_result["summary"]["critical_issues"]
+
+                # Log each critical issue for debugging
+                for issue in critical_issues:
+                    logger.error(f"  - {issue}")
+
+                # Check if this is a total failure or if we can continue with warnings
+                speaker_mapping = validation_result.get("validations", {}).get(
+                    "speaker_mapping", {}
+                )
+                debug_info = speaker_mapping.get("debug_info", {})
+
+                # Allow continuation if we have at least some mapped speakers
+                mapped_speakers = debug_info.get("speaker_voice_mapping", {})
+                all_speakers = debug_info.get("all_speakers_found", [])
+
+                if mapped_speakers and len(mapped_speakers) > 0:
+                    logger.warning(
+                        f"⚠️  Validation failed but continuing anyway - {len(mapped_speakers)} speakers mapped out of {len(all_speakers)}"
+                    )
+                    logger.warning(
+                        f"   Mapped speakers: {list(mapped_speakers.keys())}"
+                    )
+                    logger.warning(
+                        f"   Unmapped speakers: {debug_info.get('unmapped_speakers', [])}"
+                    )
+                else:
+                    # Total failure - no speakers mapped at all
+                    logger.error(
+                        "🚫 Complete validation failure - no speakers can be mapped to voices"
+                    )
+                    return {
+                        "success": False,
+                        "error": f"Voice assignment validation failed completely: {critical_issues}",
+                        "validation_details": validation_result,
+                        "data": None,
+                    }
+
+            # Send validation success notification
+            if progress_update_callback:
+                await progress_update_callback(
+                    "voice_validation",
+                    25,
+                    f"Voice assignment validation passed: {len(script_segments)} segments validated",
+                )
+
             # Estimate cost before generation
             cost_estimate = await self.voice_agent.estimate_generation_cost(
                 script_segments
@@ -777,6 +977,7 @@ class EnhancedPipelineOrchestrator:
                 script_segments=script_segments,
                 voice_settings=user_inputs.get("voice_settings"),
                 include_cost_estimate=True,
+                podcast_id=str(generation_state["podcast_id"]),
             )
 
             if voice_result.success:
@@ -784,6 +985,17 @@ class EnhancedPipelineOrchestrator:
                 generation_state["quality_scores"]["voice_generation"] = (
                     100  # Successful generation
                 )
+
+                # Post-generation validation: Check that both hosts got voice assignments
+                post_validation = validator.validate_voice_balance(
+                    voice_result.audio_segments
+                )
+                if not post_validation["balanced"]:
+                    logger.warning(
+                        f"Voice balance issues detected: {post_validation['warnings']}"
+                    )
+                else:
+                    logger.info("✅ Voice balance validation passed")
 
                 # Prepare voice data for response
                 voice_data = {
@@ -815,6 +1027,11 @@ class EnhancedPipelineOrchestrator:
                     "total_cost": voice_result.total_cost,
                     "generation_time": voice_result.processing_time,
                     "segments_count": len(voice_result.audio_segments),
+                    # Add validation metadata
+                    "validation_results": {
+                        "pre_generation": validation_result,
+                        "post_generation": post_validation,
+                    },
                 }
 
                 logger.info(
@@ -833,11 +1050,10 @@ class EnhancedPipelineOrchestrator:
                     "success": False,
                     "error": voice_result.error_message,
                     "data": None,
-                    "cost_estimate": cost_estimate,
                 }
 
         except Exception as e:
-            logger.error(f"Voice generation phase failed: {e}")
+            logger.error(f"Error in voice generation phase: {e}")
             return {"success": False, "error": str(e), "data": None}
 
     def _extract_voice_segments(
@@ -856,8 +1072,39 @@ class EnhancedPipelineOrchestrator:
         voice_segments = []
 
         try:
-            # Get host configurations
-            hosts_config = user_inputs.get("hosts", {})
+            # Get voice profiles for direct mapping
+            voice_profiles = self.voice_agent.get_voice_profiles()
+            logger.error(f"🎯 VOICE PROFILES FOR EXTRACTION: {voice_profiles}")
+
+            # Create mapping from actual speaker names to voice profile keys
+            speaker_name_mapping = {}
+            user_hosts = user_inputs.get("hosts", {})
+
+            # Get clean voice names for mapping
+            clean_voice_names = self.voice_agent.get_clean_speaker_names()
+
+            # Build mapping from clean voice names to host_1/host_2
+            for host_id in ["host_1", "host_2"]:
+                # Map clean voice names (e.g., "David" -> "host_1")
+                if host_id in clean_voice_names:
+                    clean_name = clean_voice_names[host_id]
+                    speaker_name_mapping[clean_name] = host_id
+
+                # Also map host_id to itself for direct matches
+                speaker_name_mapping[host_id] = host_id
+
+                # Handle custom user names if provided (backwards compatibility)
+                if host_id in user_hosts and "name" in user_hosts[host_id]:
+                    actual_name = user_hosts[host_id]["name"]
+                    speaker_name_mapping[actual_name] = host_id
+
+                # Map voice profile names to host IDs (full names like "David Professional")
+                if host_id in voice_profiles and "name" in voice_profiles[host_id]:
+                    profile_name = voice_profiles[host_id]["name"]
+                    speaker_name_mapping[profile_name] = host_id
+
+            logger.info(f"Speaker name mapping: {speaker_name_mapping}")
+            logger.info(f"Clean voice names: {clean_voice_names}")
 
             # Extract segments from script
             script_segments = script_data.get("segments", [])
@@ -884,37 +1131,45 @@ class EnhancedPipelineOrchestrator:
 
                 # Process each dialogue item
                 for dialogue_item in dialogue_items:
-                    speaker = dialogue_item.get("speaker", "host_1")
+                    original_speaker = dialogue_item.get("speaker", "host_1")
                     text = dialogue_item.get("text", "").strip()
 
                     # Skip empty or very short segments
                     if len(text) < 10:
                         continue
 
-                    # Map speaker to voice configuration
-                    voice_id = None
-                    host_config = None
+                    # Map actual speaker name to voice profile key
+                    mapped_speaker = speaker_name_mapping.get(
+                        original_speaker, "host_1"
+                    )
 
-                    # First try direct speaker name lookup
-                    if speaker in hosts_config:
-                        host_config = hosts_config[speaker]
-                        voice_id = host_config.get("voice_id")
-                    else:
-                        # Try to find speaker by name in host configurations
-                        for host_key, host_data in hosts_config.items():
-                            if host_data.get("name") == speaker:
-                                host_config = host_data
-                                voice_id = host_data.get("voice_id")
+                    # If we still can't find a mapping, try fuzzy matching
+                    if (
+                        mapped_speaker == "host_1"
+                        and original_speaker not in speaker_name_mapping
+                    ):
+                        # Try to find a partial match
+                        for name, host_id in speaker_name_mapping.items():
+                            if (
+                                name.lower() in original_speaker.lower()
+                                or original_speaker.lower() in name.lower()
+                            ):
+                                mapped_speaker = host_id
                                 break
 
-                    # If still no match, use default mapping
-                    if not host_config:
-                        voice_id = None
+                    # Get voice ID for the mapped speaker
+                    if mapped_speaker in voice_profiles:
+                        voice_id = voice_profiles[mapped_speaker]["voice_id"]
+                    else:
+                        # Final fallback to host_1
+                        voice_id = voice_profiles.get("host_1", {}).get("voice_id")
+                        mapped_speaker = "host_1"
 
                     voice_segments.append(
                         {
                             "text": text,
-                            "speaker": speaker,
+                            "speaker": mapped_speaker,  # Use mapped speaker for validation
+                            "original_speaker": original_speaker,  # Keep original for reference
                             "voice_id": voice_id,
                             "segment_type": segment.get("type", "dialogue"),
                             "subtopic": segment.get("subtopic", ""),
@@ -924,6 +1179,16 @@ class EnhancedPipelineOrchestrator:
                     )
 
             logger.info(f"Extracted {len(voice_segments)} voice segments from script")
+            logger.info(
+                f"Speaker mapping summary: {set(vs['speaker'] for vs in voice_segments)}"
+            )
+
+            # Debug: Log first few segments
+            for i, seg in enumerate(voice_segments[:3]):
+                logger.error(
+                    f"🎯 SEGMENT {i}: speaker={seg.get('speaker')}, voice_id={seg.get('voice_id')}"
+                )
+
             return voice_segments
 
         except Exception as e:
@@ -1521,6 +1786,8 @@ class EnhancedPipelineOrchestrator:
                 target_length=user_inputs.get("target_duration", 10),
                 host_personalities=user_inputs.get("hosts"),
                 style_preferences=user_inputs.get("style_preferences"),
+                voice_profiles=self.voice_agent.get_voice_profiles(),
+                user_inputs=user_inputs,
             )
 
             script_result = {
@@ -1734,3 +2001,84 @@ class EnhancedPipelineOrchestrator:
         except Exception as e:
             logger.error(f"Audio assembly phase failed: {e}")
             return {"success": False, "error": str(e), "data": None}
+
+    def setup_voice_profiles_from_user_inputs(
+        self, user_inputs: Dict[str, Any]
+    ) -> None:
+        """Setup voice profiles based on MANDATORY user-selected voices from frontend"""
+        try:
+            logger.info(f"🔧 VOICE SETUP CALLED WITH: {user_inputs.get('hosts', {})}")
+
+            hosts = user_inputs.get("hosts", {})
+            if not hosts:
+                raise ValueError(
+                    "❌ VOICE SELECTION REQUIRED: No hosts configuration found in user inputs. "
+                    "Users must explicitly select voices for both hosts."
+                )
+
+            # MANDATORY: Both host_1 and host_2 must have voice selections
+            required_hosts = ["host_1", "host_2"]
+            missing_hosts = []
+
+            for host_id in required_hosts:
+                if host_id not in hosts:
+                    missing_hosts.append(host_id)
+                elif not hosts[host_id].get("voice_id"):
+                    missing_hosts.append(f"{host_id} (no voice_id)")
+
+            if missing_hosts:
+                raise ValueError(
+                    f"❌ VOICE SELECTION INCOMPLETE: Missing voice selections for: {missing_hosts}. "
+                    "Both host_1 and host_2 must have voice_id specified. No default voices provided."
+                )
+
+            # Voice ID to name mapping for better speaker identification
+            voice_name_mapping = {
+                "system_marcus_conversational_male_canadian_76856": "Marcus",
+                "system_sofia_dynamic_female_american_80087": "Sofia",
+                "system_david_professional_male_british_45231": "David",
+                "system_maya_engaging_female_american_91844": "Maya",
+                "system_alex_analytical_male_american_72319": "Alex",
+                "system_emma_warm_female_british_58492": "Emma",
+                "system_james_confident_male_australian_83761": "James",
+                "system_lily_cheerful_female_canadian_69205": "Lily",
+                "system_noah_thoughtful_male_american_51847": "Noah",
+                "system_zoe_energetic_female_american_94628": "Zoe",
+            }
+
+            # Create voice profiles from MANDATORY user selections
+            user_voice_profiles = {}
+
+            for host_id in required_hosts:
+                host_config = hosts[host_id]
+                voice_id = host_config[
+                    "voice_id"
+                ]  # This is guaranteed to exist due to validation above
+
+                # Use mapped name based on voice_id, fallback to user-provided name, then generic name
+                if voice_id in voice_name_mapping:
+                    name = voice_name_mapping[voice_id]
+                else:
+                    name = host_config.get("name", f"Host {host_id[-1]}")
+
+                user_voice_profiles[host_id] = {
+                    "voice_id": voice_id,
+                    "name": name,
+                    "personality": host_config.get("personality", "engaging host"),
+                    "role": host_config.get("role", "host"),
+                    "source": "user_selected",
+                }
+                logger.info(
+                    f"✅ User-selected voice for {host_id}: {voice_id} ({name})"
+                )
+
+            # Set the voice profiles (no fallbacks or defaults)
+            self.voice_agent.voice_profiles = user_voice_profiles
+            logger.info(
+                f"🎯 Voice profiles set successfully: {list(user_voice_profiles.keys())}"
+            )
+
+        except Exception as e:
+            logger.error(f"❌ Voice profile setup failed: {e}")
+            # DO NOT continue with defaults - raise the error to prevent generation
+            raise ValueError(f"Voice profile setup failed: {e}")

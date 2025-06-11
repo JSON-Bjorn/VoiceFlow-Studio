@@ -32,6 +32,7 @@ import {
     CreditSummary,
     api
 } from '@/lib/api';
+import VoiceCloneModal from '@/components/VoiceCloneModal';
 
 // Queue management types
 interface GenerationQueueItem {
@@ -60,7 +61,7 @@ export default function PodcastLibrary() {
     const [statusFilter, setStatusFilter] = useState<string>('');
     const [searchTerm, setSearchTerm] = useState('');
     const [showCreateForm, setShowCreateForm] = useState(false);
-    const [showGenerationOptions, setShowGenerationOptions] = useState<number | null>(null);
+    // Removed showGenerationOptions - only one generation when creating podcasts
     const [showCreditConfirmation, setShowCreditConfirmation] = useState(false);
     const [pendingPodcastData, setPendingPodcastData] = useState<PodcastCreate | null>(null);
 
@@ -74,7 +75,8 @@ export default function PodcastLibrary() {
     const [newPodcast, setNewPodcast] = useState<PodcastCreate>({
         title: '',
         topic: '',
-        length: 10
+        length: 10,
+        voice_settings: undefined
     });
 
     // Generation options state
@@ -82,8 +84,18 @@ export default function PodcastLibrary() {
         generateVoice: true,
         assemble_audio: true,
         hostPersonalities: {
-            host_1: { name: 'Felix', personality: 'analytical, thoughtful, engaging', role: 'primary_questioner' },
-            host_2: { name: 'Bjorn', personality: 'warm, curious, conversational', role: 'storyteller' }
+            host_1: {
+                name: 'Host 1',
+                personality: 'analytical, thoughtful, engaging',
+                role: 'primary_questioner',
+                voice_id: '' // Add voice_id support
+            },
+            host_2: {
+                name: 'Host 2',
+                personality: 'warm, curious, conversational',
+                role: 'storyteller',
+                voice_id: '' // Add voice_id support
+            }
         },
         stylePreferences: {
             tone: 'conversational',
@@ -108,6 +120,17 @@ export default function PodcastLibrary() {
             add_background_music: false,
             background_asset_id: ''
         }
+    });
+
+    // Voice cloning state
+    const [showVoiceCloneModal, setShowVoiceCloneModal] = useState(false);
+
+    // Voice selection state
+    const [userVoices, setUserVoices] = useState<any[]>([]);
+    const [systemVoices, setSystemVoices] = useState<any[]>([]);
+    const [voiceSettings, setVoiceSettings] = useState({
+        host1_voice_id: '',
+        host2_voice_id: ''
     });
 
     // Queue management functions
@@ -183,8 +206,33 @@ export default function PodcastLibrary() {
         }
     };
 
+    // Load user voices
+    const loadUserVoices = async () => {
+        try {
+            const response = await api.getUserVoices();
+            setUserVoices(response.voices);
+        } catch (error) {
+            console.error('Failed to load user voices:', error);
+        }
+    };
+
+    // Load system voices
+    const loadSystemVoices = async () => {
+        try {
+            const response = await fetch('http://localhost:8000/api/chatterbox/system-voices');
+            const data = await response.json();
+            if (data.success) {
+                setSystemVoices(data.system_voices);
+            }
+        } catch (error) {
+            console.error('Failed to load system voices:', error);
+        }
+    };
+
     useEffect(() => {
         loadData();
+        loadUserVoices();
+        loadSystemVoices();
     }, [currentPage, statusFilter]);
 
     // Auto-refresh data when there are active generations
@@ -207,8 +255,20 @@ export default function PodcastLibrary() {
         e.preventDefault();
         if (!newPodcast.title.trim() || !newPodcast.topic.trim()) return;
 
+        // MANDATORY: Validate voice selections
+        if (!voiceSettings.host1_voice_id || !voiceSettings.host2_voice_id) {
+            alert('❌ Voice Selection Required: You must select voices for both Host 1 and Host 2 before creating a podcast. No default voices are available.');
+            return;
+        }
+
+        // Prepare podcast data with voice settings (always included now)
+        const podcastData = {
+            ...newPodcast,
+            voice_settings: voiceSettings // Always include voice settings
+        };
+
         // Store the podcast data and show credit confirmation
-        setPendingPodcastData({ ...newPodcast });
+        setPendingPodcastData(podcastData);
         setShowCreateForm(false);
         setShowCreditConfirmation(true);
     };
@@ -221,8 +281,12 @@ export default function PodcastLibrary() {
             setCreating(true);
             setShowCreditConfirmation(false);
 
+            console.log('Creating podcast with data:', pendingPodcastData);
+            console.log('Current voice settings at creation time:', voiceSettings);
+
             // Create the podcast
             const podcast = await api.createPodcast(pendingPodcastData);
+            console.log('Created podcast:', podcast);
             setPodcasts(prev => [podcast, ...prev]);
 
             // Clear form data
@@ -254,7 +318,7 @@ export default function PodcastLibrary() {
         setShowCreateForm(true); // Go back to form
     };
 
-    // Start background generation
+    // Start background generation (only used for new podcast creation)
     const startBackgroundGeneration = async (podcast: Podcast) => {
         // Add to generation queue
         const generationId = addToQueue(podcast.id, podcast.title);
@@ -274,9 +338,63 @@ export default function PodcastLibrary() {
     const handleBackgroundGeneration = async (podcast: Podcast, generationId: string) => {
         try {
             console.log('Starting background generation for podcast:', podcast.id);
+            console.log('Current voiceSettings:', voiceSettings);
+            console.log('Current generationOptions.hostPersonalities:', generationOptions.hostPersonalities);
+
+            // Check if we have voice IDs from either source
+            const host1VoiceId = voiceSettings.host1_voice_id || generationOptions.hostPersonalities.host_1.voice_id;
+            const host2VoiceId = voiceSettings.host2_voice_id || generationOptions.hostPersonalities.host_2.voice_id;
+
+            console.log('Resolved voice IDs:', { host1VoiceId, host2VoiceId });
+
+            // Determine final voice IDs (with fallback to podcast.voice_settings if needed)
+            let finalHost1VoiceId = host1VoiceId || '';
+            let finalHost2VoiceId = host2VoiceId || '';
+
+            // Last resort: try to get voice settings from the podcast if available
+            if ((!finalHost1VoiceId || !finalHost2VoiceId) && podcast.voice_settings) {
+                console.log('Using voice settings from podcast:', podcast.voice_settings);
+                finalHost1VoiceId = finalHost1VoiceId || podcast.voice_settings.host1_voice_id || '';
+                finalHost2VoiceId = finalHost2VoiceId || podcast.voice_settings.host2_voice_id || '';
+                console.log('Final resolved voice IDs:', { finalHost1VoiceId, finalHost2VoiceId });
+            }
+
+            // Validate that we have both voice IDs before proceeding
+            if (!finalHost1VoiceId || !finalHost2VoiceId) {
+                const missingVoices = [];
+                if (!finalHost1VoiceId) missingVoices.push('Host 1');
+                if (!finalHost2VoiceId) missingVoices.push('Host 2');
+
+                const errorMessage = `❌ Voice Selection Error: Missing voice selections for ${missingVoices.join(' and ')}. This should not happen - please try creating the podcast again.`;
+                console.error(errorMessage);
+
+                // Update queue item as error
+                updateQueueItem(generationId, {
+                    status: 'error',
+                    errorMessage: errorMessage
+                });
+                return;
+            }
+
+            // Sync voice settings with generation options before making API call
+            const optionsWithVoiceSettings = {
+                ...generationOptions,
+                hostPersonalities: {
+                    host_1: {
+                        ...generationOptions.hostPersonalities.host_1,
+                        voice_id: finalHost1VoiceId
+                    },
+                    host_2: {
+                        ...generationOptions.hostPersonalities.host_2,
+                        voice_id: finalHost2VoiceId
+                    }
+                }
+            };
+
+            console.log('Generation options with voice settings:', optionsWithVoiceSettings);
 
             // Start the generation process
-            const result = await api.generatePodcastWithAI(podcast.id, generationOptions);
+            const result = await api.generatePodcastWithAI(podcast.id, optionsWithVoiceSettings);
 
             console.log('Generation result received:', result);
 
@@ -333,22 +451,7 @@ export default function PodcastLibrary() {
         }
     };
 
-    // Enhanced generation with queue management (for existing podcasts)
-    const handleGenerateEnhanced = async (podcast: Podcast) => {
-        // Check if this podcast is already generating
-        const existingQueueItem = generationQueue.find(item => item.podcastId === podcast.id &&
-            (item.status === 'active' || item.status === 'queued'));
-
-        if (existingQueueItem) {
-            // Show the progress modal for existing generation
-            setCurrentGenerationId(existingQueueItem.id);
-            setShowProgressModal(true);
-            return;
-        }
-
-        // Start new background generation
-        startBackgroundGeneration(podcast);
-    };
+    // Note: Removed handleGenerateEnhanced - only one generation when creating podcasts
 
     // Progress modal handlers
     const handleGenerationComplete = (result: any) => {
@@ -378,10 +481,7 @@ export default function PodcastLibrary() {
         // setCurrentGenerationId(null);
     };
 
-    // Show generation options modal
-    const showGenerationModal = (podcast: Podcast) => {
-        setShowGenerationOptions(podcast.id);
-    };
+    // Note: Removed showGenerationModal - only one generation when creating podcasts
 
     // Delete podcast
     const handleDelete = async (podcast: Podcast) => {
@@ -411,6 +511,21 @@ export default function PodcastLibrary() {
 
     // Get queue statistics for display
     const queueStats = getQueueStats();
+
+    const handleVoiceCloneSuccess = async (voiceId: string) => {
+        console.log('Voice cloned successfully:', voiceId);
+
+        // Give a small delay to ensure the API has fully processed the voice
+        setTimeout(async () => {
+            // Refresh user voices to include the new voice
+            await loadUserVoices();
+            // Also refresh system voices in case the voice was promoted
+            await loadSystemVoices();
+        }, 500);
+
+        alert(`Voice cloned successfully! You can now use it in podcast generation.`);
+        // Don't close the modal here - let the user close it manually after testing
+    };
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
@@ -473,6 +588,16 @@ export default function PodcastLibrary() {
                         >
                             <Plus className="h-4 w-4 mr-2" />
                             New Podcast
+                        </Button>
+
+                        {/* Add Clone Voice button */}
+                        <Button
+                            onClick={() => setShowVoiceCloneModal(true)}
+                            variant="outline"
+                            className="border-purple-500/50 text-purple-300 hover:bg-purple-500/20 hover:text-purple-200 hover:border-purple-400 transition-all duration-200"
+                        >
+                            <Mic className="h-4 w-4 mr-2" />
+                            Clone Your Voice
                         </Button>
                     </div>
                 </div>
@@ -700,7 +825,6 @@ export default function PodcastLibrary() {
                             <PodcastCard
                                 key={podcast.id}
                                 podcast={podcast}
-                                onGenerate={() => showGenerationModal(podcast)}
                                 onDelete={() => handleDelete(podcast)}
                                 isGenerating={!!isGenerating}
                                 generationProgress={generationProgress}
@@ -822,6 +946,127 @@ export default function PodcastLibrary() {
                                             <option value={30}>30 minutes</option>
                                         </select>
                                     </div>
+
+                                    {/* Voice Selection Section */}
+                                    <div className="border-t border-slate-600 pt-4">
+                                        <div className="space-y-3">
+                                            <div className="mb-4">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <h4 className="text-sm font-medium text-gray-300 flex items-center">
+                                                        <Volume2 className="h-4 w-4 mr-2 text-purple-400" />
+                                                        Voice Selection for Hosts
+                                                    </h4>
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() => setShowVoiceCloneModal(true)}
+                                                        className="border-purple-500/50 text-purple-300 hover:bg-purple-500/20 hover:text-purple-200 hover:border-purple-400 transition-all duration-200"
+                                                    >
+                                                        <Mic className="h-3 w-3 mr-1" />
+                                                        Clone Voice
+                                                    </Button>
+                                                </div>
+                                                <p className="text-xs text-gray-400">
+                                                    Choose voices for your podcast hosts from our curated selection
+                                                </p>
+                                            </div>
+
+                                            <div className="space-y-3 pl-6 border-l-2 border-purple-500/30">
+                                                {userVoices.length === 0 && systemVoices.length === 0 ? (
+                                                    <p className="text-sm text-gray-400 italic">
+                                                        No voices available. Clone your voice or contact support!
+                                                    </p>
+                                                ) : (
+                                                    <>
+                                                        <div>
+                                                            <label className="block text-xs font-medium mb-1 text-gray-400">Host 1 Voice</label>
+                                                            <select
+                                                                value={voiceSettings.host1_voice_id}
+                                                                onChange={(e) => setVoiceSettings(prev => ({ ...prev, host1_voice_id: e.target.value }))}
+                                                                className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-md px-2 py-1 focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                                            >
+                                                                <option value="">⚠️  Select Host 1 voice (required)</option>
+
+                                                                {/* System Voices Section */}
+                                                                {systemVoices.length > 0 && (
+                                                                    <optgroup label="📢 Podcast Voices (Available to All)">
+                                                                        {systemVoices
+                                                                            .filter(voice => voice.gender === 'male')
+                                                                            .map(voice => (
+                                                                                <option key={voice.voice_id} value={voice.voice_id}>
+                                                                                    👨 {voice.name}
+                                                                                </option>
+                                                                            ))}
+                                                                        {systemVoices
+                                                                            .filter(voice => voice.gender === 'female')
+                                                                            .map(voice => (
+                                                                                <option key={voice.voice_id} value={voice.voice_id}>
+                                                                                    👩 {voice.name}
+                                                                                </option>
+                                                                            ))}
+                                                                    </optgroup>
+                                                                )}
+
+                                                                {/* User Custom Voices Section */}
+                                                                {userVoices.length > 0 && (
+                                                                    <optgroup label="🎤 My Custom Voices">
+                                                                        {userVoices.map(voice => (
+                                                                            <option key={voice.voice_id} value={voice.voice_id}>
+                                                                                🔒 {voice.name}
+                                                                            </option>
+                                                                        ))}
+                                                                    </optgroup>
+                                                                )}
+                                                            </select>
+                                                        </div>
+
+                                                        <div>
+                                                            <label className="block text-xs font-medium mb-1 text-gray-400">Host 2 Voice</label>
+                                                            <select
+                                                                value={voiceSettings.host2_voice_id}
+                                                                onChange={(e) => setVoiceSettings(prev => ({ ...prev, host2_voice_id: e.target.value }))}
+                                                                className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-md px-2 py-1 focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                                            >
+                                                                <option value="">⚠️  Select Host 2 voice (required)</option>
+
+                                                                {/* System Voices Section */}
+                                                                {systemVoices.length > 0 && (
+                                                                    <optgroup label="📢 Podcast Voices (Available to All)">
+                                                                        {systemVoices
+                                                                            .filter(voice => voice.gender === 'male')
+                                                                            .map(voice => (
+                                                                                <option key={voice.voice_id} value={voice.voice_id}>
+                                                                                    👨 {voice.name}
+                                                                                </option>
+                                                                            ))}
+                                                                        {systemVoices
+                                                                            .filter(voice => voice.gender === 'female')
+                                                                            .map(voice => (
+                                                                                <option key={voice.voice_id} value={voice.voice_id}>
+                                                                                    👩 {voice.name}
+                                                                                </option>
+                                                                            ))}
+                                                                    </optgroup>
+                                                                )}
+
+                                                                {/* User Custom Voices Section */}
+                                                                {userVoices.length > 0 && (
+                                                                    <optgroup label="🎤 My Custom Voices">
+                                                                        {userVoices.map(voice => (
+                                                                            <option key={voice.voice_id} value={voice.voice_id}>
+                                                                                🔒 {voice.name}
+                                                                            </option>
+                                                                        ))}
+                                                                    </optgroup>
+                                                                )}
+                                                            </select>
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div className="flex justify-end space-x-3 mt-6">
                                     <Button
@@ -914,129 +1159,15 @@ export default function PodcastLibrary() {
                     </div>
                 )}
 
-                {/* Generation Options Modal */}
-                {showGenerationOptions && (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                        <div className="bg-white rounded-lg p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
-                            <h2 className="text-xl font-bold mb-4">Generation Options</h2>
-
-                            <div className="space-y-6">
-                                {/* Audio generation is always enabled for podcasts */}
-                                <div className="border rounded-lg p-4 bg-green-50">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <Volume2 className="h-4 w-4 text-green-600" />
-                                        <span className="text-sm font-medium text-green-800">Audio Generation Enabled</span>
-                                    </div>
-                                    <p className="text-xs text-green-700">
-                                        Your podcast will include high-quality voice audio using Chatterbox TTS
-                                    </p>
-                                </div>
-
-                                {/* Host Personalities */}
-                                <div className="border rounded-lg p-4">
-                                    <h3 className="font-medium mb-3">Host Personalities</h3>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {Object.entries(generationOptions.hostPersonalities).map(([key, host]) => (
-                                            <div key={key} className="space-y-2">
-                                                <label className="block text-sm font-medium">
-                                                    {key.replace('_', ' ').toUpperCase()}
-                                                </label>
-                                                <input
-                                                    type="text"
-                                                    value={host.name}
-                                                    onChange={(e) => setGenerationOptions(prev => ({
-                                                        ...prev,
-                                                        hostPersonalities: {
-                                                            ...prev.hostPersonalities,
-                                                            [key]: { ...host, name: e.target.value }
-                                                        }
-                                                    }))}
-                                                    className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
-                                                    placeholder="Host name"
-                                                />
-                                                <textarea
-                                                    value={host.personality}
-                                                    onChange={(e) => setGenerationOptions(prev => ({
-                                                        ...prev,
-                                                        hostPersonalities: {
-                                                            ...prev.hostPersonalities,
-                                                            [key]: { ...host, personality: e.target.value }
-                                                        }
-                                                    }))}
-                                                    className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
-                                                    placeholder="Personality traits"
-                                                    rows={2}
-                                                />
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Audio Options */}
-                                <div className="border rounded-lg p-4">
-                                    <h3 className="font-medium mb-3">Audio Options</h3>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <label className="flex items-center space-x-2">
-                                            <input
-                                                type="checkbox"
-                                                checked={generationOptions.audio_options.add_intro}
-                                                onChange={(e) => setGenerationOptions(prev => ({
-                                                    ...prev,
-                                                    audio_options: { ...prev.audio_options, add_intro: e.target.checked }
-                                                }))}
-                                            />
-                                            <span className="text-sm">Add Intro</span>
-                                        </label>
-                                        <label className="flex items-center space-x-2">
-                                            <input
-                                                type="checkbox"
-                                                checked={generationOptions.audio_options.add_outro}
-                                                onChange={(e) => setGenerationOptions(prev => ({
-                                                    ...prev,
-                                                    audio_options: { ...prev.audio_options, add_outro: e.target.checked }
-                                                }))}
-                                            />
-                                            <span className="text-sm">Add Outro</span>
-                                        </label>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="flex justify-end space-x-3 mt-6">
-                                <Button
-                                    variant="outline"
-                                    onClick={() => setShowGenerationOptions(null)}
-                                    className="border-slate-600 text-slate-700 hover:bg-slate-100 hover:text-slate-800 transition-all duration-200"
-                                >
-                                    Cancel
-                                </Button>
-                                <Button
-                                    onClick={() => {
-                                        const podcast = podcasts.find(p => p.id === showGenerationOptions);
-                                        if (podcast) {
-                                            handleGenerateEnhanced(podcast);
-                                        }
-                                    }}
-                                    disabled={generating !== null}
-                                    className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white border-0 shadow-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {generating ? (
-                                        <>
-                                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                            Generating...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Mic className="h-4 w-4 mr-2" />
-                                            Start Generation
-                                        </>
-                                    )}
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
-                )}
+                {/* Removed Generation Options Modal - only one generation when creating podcasts */}
             </main>
+
+            {/* Voice Clone Modal */}
+            <VoiceCloneModal
+                isOpen={showVoiceCloneModal}
+                onClose={() => setShowVoiceCloneModal(false)}
+                onSuccess={handleVoiceCloneSuccess}
+            />
         </div>
     );
 } 

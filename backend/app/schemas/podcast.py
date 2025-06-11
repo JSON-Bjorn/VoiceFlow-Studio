@@ -4,6 +4,18 @@ from typing import Optional, List
 from ..models.podcast import PodcastStatus
 
 
+class VoiceSelectionSettings(BaseModel):
+    """Voice selection settings for podcast generation"""
+
+    host1_voice_id: Optional[str] = Field(None, description="Voice ID for primary host")
+    host2_voice_id: Optional[str] = Field(
+        None, description="Voice ID for secondary host"
+    )
+    use_custom_voices: bool = Field(
+        default=False, description="Whether to use custom cloned voices"
+    )
+
+
 class PodcastBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     topic: str = Field(..., min_length=1, max_length=500)
@@ -11,7 +23,9 @@ class PodcastBase(BaseModel):
 
 
 class PodcastCreate(PodcastBase):
-    pass
+    voice_settings: Optional[VoiceSelectionSettings] = Field(
+        None, description="Voice selection for podcast generation"
+    )
 
 
 class PodcastUpdate(BaseModel):
