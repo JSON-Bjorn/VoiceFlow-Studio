@@ -1,5 +1,7 @@
 from typing import Dict, List, Optional, Any
 from .openai_service import OpenAIService
+from .duration_calculator import DurationCalculator
+from .content_depth_analyzer import ContentDepthAnalyzer
 import logging
 
 logger = logging.getLogger(__name__)
@@ -22,6 +24,8 @@ class ContentPlanningAgent:
 
     def __init__(self):
         self.openai_service = OpenAIService()
+        self.duration_calculator = DurationCalculator()
+        self.content_analyzer = ContentDepthAnalyzer()
 
     def plan_content(
         self,
@@ -57,10 +61,17 @@ class ContentPlanningAgent:
             return None
 
         # Enhance plan with additional analysis
-        enhanced_plan = self._enhance_content_plan(content_plan, research_data)
+        enhanced_plan = self._enhance_content_plan(
+            content_plan, research_data, target_duration
+        )
+
+        # Validate duration allocation and adjust if needed
+        duration_validated_plan = self._validate_and_adjust_duration(
+            enhanced_plan, research_data, target_duration
+        )
 
         logger.info("Content planning completed")
-        return enhanced_plan
+        return duration_validated_plan
 
     def _apply_audience_preferences(
         self, audience_preferences: Optional[Dict]
@@ -182,21 +193,40 @@ class ContentPlanningAgent:
         return None
 
     def _enhance_content_plan(
-        self, content_plan: Dict[str, Any], research_data: Dict[str, Any]
+        self,
+        content_plan: Dict[str, Any],
+        research_data: Dict[str, Any],
+        target_duration: int,
     ) -> Dict[str, Any]:
         """Enhance content plan with additional analysis"""
 
         if not content_plan:
             return content_plan
 
+        # Analyze content requirements for target duration
+        content_requirements = (
+            self.duration_calculator.estimate_required_content_for_duration(
+                target_duration, "conversational"
+            )
+        )
+
+        # Assess current content depth
+        content_depth_assessment = self.content_analyzer.analyze_topic_depth(
+            research_data, target_duration
+        )
+
         # Add planning metadata
         content_plan["planning_metadata"] = {
+            "target_duration": target_duration,
             "total_subtopics": len(
                 content_plan.get("content_structure", {}).get("main_content", [])
             ),
             "content_density": self._calculate_content_density(content_plan),
             "flow_quality": self._assess_flow_quality(content_plan),
             "timing_validation": self._validate_timing(content_plan),
+            "duration_requirements": content_requirements,
+            "content_depth_assessment": content_depth_assessment,
+            "duration_allocation": self._calculate_duration_allocation(content_plan),
         }
 
         # Enhance each content section
@@ -347,6 +377,341 @@ class ContentPlanningAgent:
             return "medium"
         else:
             return "low"
+
+    def _calculate_duration_allocation(
+        self, content_plan: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Calculate detailed duration allocation breakdown"""
+
+        structure = content_plan.get("content_structure", {})
+        target_duration = content_plan.get("target_duration", 10)
+
+        # Calculate actual allocations
+        intro_duration = structure.get("intro", {}).get("duration_minutes", 0)
+        outro_duration = structure.get("outro", {}).get("duration_minutes", 0)
+
+        main_content_sections = structure.get("main_content", [])
+        main_content_duration = sum(
+            section.get("duration_minutes", 0) for section in main_content_sections
+        )
+
+        total_duration = intro_duration + main_content_duration + outro_duration
+
+        # Calculate percentages
+        intro_percentage = (
+            (intro_duration / total_duration * 100) if total_duration > 0 else 0
+        )
+        main_percentage = (
+            (main_content_duration / total_duration * 100) if total_duration > 0 else 0
+        )
+        outro_percentage = (
+            (outro_duration / total_duration * 100) if total_duration > 0 else 0
+        )
+
+        # Ideal allocation (intro 10%, main 80%, outro 10%)
+        ideal_allocation = {
+            "intro": target_duration * 0.1,
+            "main_content": target_duration * 0.8,
+            "outro": target_duration * 0.1,
+        }
+
+        # Calculate deviations
+        deviations = {
+            "intro": abs(intro_duration - ideal_allocation["intro"]),
+            "main_content": abs(
+                main_content_duration - ideal_allocation["main_content"]
+            ),
+            "outro": abs(outro_duration - ideal_allocation["outro"]),
+        }
+
+        return {
+            "actual_allocation": {
+                "intro": intro_duration,
+                "main_content": main_content_duration,
+                "outro": outro_duration,
+                "total": total_duration,
+            },
+            "percentage_breakdown": {
+                "intro": round(intro_percentage, 1),
+                "main_content": round(main_percentage, 1),
+                "outro": round(outro_percentage, 1),
+            },
+            "ideal_allocation": ideal_allocation,
+            "deviations": deviations,
+            "needs_rebalancing": any(dev > 0.5 for dev in deviations.values()),
+            "section_details": [
+                {
+                    "section": section.get("subtopic", f"Section {i + 1}"),
+                    "duration": section.get("duration_minutes", 0),
+                    "priority": section.get("priority_rank", i + 1),
+                    "percentage_of_main": (
+                        section.get("duration_minutes", 0) / main_content_duration * 100
+                    )
+                    if main_content_duration > 0
+                    else 0,
+                }
+                for i, section in enumerate(main_content_sections)
+            ],
+        }
+
+    def _validate_and_adjust_duration(
+        self,
+        content_plan: Dict[str, Any],
+        research_data: Dict[str, Any],
+        target_duration: int,
+    ) -> Dict[str, Any]:
+        """
+        Validate duration allocation and suggest adjustments if needed
+
+        Args:
+            content_plan: Current content plan
+            research_data: Research data for context
+            target_duration: Target duration in minutes
+
+        Returns:
+            Adjusted content plan with duration validation
+        """
+
+        logger.info(f"Validating duration allocation for {target_duration}min target")
+
+        # Get current duration allocation
+        duration_allocation = content_plan["planning_metadata"]["duration_allocation"]
+        total_allocated = duration_allocation["actual_allocation"]["total"]
+
+        # Check if adjustment is needed
+        tolerance = 0.5  # 30 seconds tolerance
+        needs_adjustment = abs(total_allocated - target_duration) > tolerance
+
+        if needs_adjustment:
+            logger.info(
+                f"Duration adjustment needed: {total_allocated}min allocated vs {target_duration}min target"
+            )
+            content_plan = self._adjust_content_duration(content_plan, target_duration)
+
+        # Add duration validation metadata
+        content_plan["duration_validation"] = {
+            "target_duration": target_duration,
+            "allocated_duration": total_allocated,
+            "within_tolerance": not needs_adjustment,
+            "adjustment_applied": needs_adjustment,
+            "tolerance_minutes": tolerance,
+            "validation_passed": abs(
+                content_plan["planning_metadata"]["duration_allocation"][
+                    "actual_allocation"
+                ]["total"]
+                - target_duration
+            )
+            <= tolerance,
+        }
+
+        # Estimate content requirements for validation
+        content_requirements = (
+            self.duration_calculator.estimate_required_content_for_duration(
+                target_duration, "conversational"
+            )
+        )
+
+        # Validate research content depth
+        depth_validation = self.duration_calculator.validate_duration_accuracy(
+            research_data.get("research_sections", []),
+            target_duration,
+            tolerance_percentage=15,
+        )
+
+        content_plan["content_readiness"] = {
+            "content_requirements": content_requirements,
+            "depth_validation": depth_validation,
+            "ready_for_script_generation": depth_validation.get(
+                "validation_passed", False
+            ),
+            "recommended_actions": depth_validation.get("recommendations", []),
+        }
+
+        return content_plan
+
+    def _adjust_content_duration(
+        self, content_plan: Dict[str, Any], target_duration: int
+    ) -> Dict[str, Any]:
+        """Adjust content durations to meet target"""
+
+        structure = content_plan.get("content_structure", {})
+
+        # Calculate current total
+        current_total = (
+            structure.get("intro", {}).get("duration_minutes", 0)
+            + sum(
+                section.get("duration_minutes", 0)
+                for section in structure.get("main_content", [])
+            )
+            + structure.get("outro", {}).get("duration_minutes", 0)
+        )
+
+        if current_total == 0:
+            return content_plan
+
+        # Calculate adjustment factor
+        adjustment_factor = target_duration / current_total
+
+        # Adjust intro (keep to ideal 10%)
+        ideal_intro = target_duration * 0.1
+        if "intro" in structure:
+            structure["intro"]["duration_minutes"] = round(ideal_intro, 1)
+
+        # Adjust outro (keep to ideal 10%)
+        ideal_outro = target_duration * 0.1
+        if "outro" in structure:
+            structure["outro"]["duration_minutes"] = round(ideal_outro, 1)
+
+        # Adjust main content proportionally (remaining 80%)
+        remaining_time = target_duration * 0.8
+        main_content = structure.get("main_content", [])
+
+        if main_content:
+            current_main_total = sum(
+                section.get("duration_minutes", 0) for section in main_content
+            )
+
+            for section in main_content:
+                if current_main_total > 0:
+                    section_proportion = (
+                        section.get("duration_minutes", 0) / current_main_total
+                    )
+                    section["duration_minutes"] = round(
+                        remaining_time * section_proportion, 1
+                    )
+
+        # Recalculate duration allocation after adjustment
+        content_plan["planning_metadata"]["duration_allocation"] = (
+            self._calculate_duration_allocation(content_plan)
+        )
+
+        logger.info(
+            f"Duration adjusted from {current_total}min to {target_duration}min"
+        )
+
+        return content_plan
+
+    def plan_content_with_duration_awareness(
+        self,
+        research_data: Dict[str, Any],
+        target_duration: int = 10,
+        audience_preferences: Optional[Dict] = None,
+        quality_threshold: float = 80.0,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Create content plan with strict duration awareness and quality validation
+
+        Args:
+            research_data: Research data from ResearchAgent
+            target_duration: Target duration in minutes
+            audience_preferences: Optional audience preferences
+            quality_threshold: Minimum quality threshold percentage
+
+        Returns:
+            Duration-aware content plan that meets quality requirements
+        """
+
+        logger.info(f"Creating duration-aware content plan for {target_duration}min")
+
+        # First check if research data has sufficient content
+        content_depth = self.content_analyzer.analyze_topic_depth(
+            research_data, target_duration
+        )
+
+        if (
+            content_depth["analysis_summary"]["completeness_percentage"]
+            < quality_threshold
+        ):
+            logger.warning(
+                f"Research content may be insufficient for {target_duration}min target"
+            )
+
+        # Create initial content plan
+        content_plan = self.plan_content(
+            research_data, target_duration, audience_preferences
+        )
+
+        if not content_plan:
+            return None
+
+        # Iterative improvement for duration accuracy
+        max_iterations = 3
+        iteration = 0
+
+        while iteration < max_iterations:
+            # Check duration validation
+            duration_validation = content_plan.get("duration_validation", {})
+
+            if duration_validation.get("validation_passed", False):
+                logger.info(f"Duration validation passed on iteration {iteration + 1}")
+                break
+
+            # Adjust timing if needed
+            logger.info(f"Iteration {iteration + 1}: Adjusting content timing")
+            content_plan = self._fine_tune_content_timing(content_plan, target_duration)
+
+            iteration += 1
+
+        # Final validation
+        final_validation = self.validate_content_plan(content_plan)
+        content_plan["final_validation"] = final_validation
+
+        logger.info(
+            f"Duration-aware content planning completed. Quality score: {final_validation['quality_score']}"
+        )
+
+        return content_plan
+
+    def _fine_tune_content_timing(
+        self, content_plan: Dict[str, Any], target_duration: int
+    ) -> Dict[str, Any]:
+        """Fine-tune content timing for better duration accuracy"""
+
+        # Re-validate and adjust duration
+        content_plan = self._validate_and_adjust_duration(
+            content_plan,
+            {},
+            target_duration,  # Empty research_data for timing-only adjustment
+        )
+
+        # Optimize section priorities based on duration constraints
+        main_content = content_plan.get("content_structure", {}).get("main_content", [])
+
+        # Sort by priority and adjust durations for better balance
+        main_content.sort(key=lambda x: x.get("priority_rank", 999))
+
+        # Redistribute time more evenly among high-priority sections
+        high_priority_sections = [
+            s for s in main_content if s.get("priority_rank", 999) <= 2
+        ]
+        medium_priority_sections = [
+            s for s in main_content if 3 <= s.get("priority_rank", 999) <= 4
+        ]
+
+        available_main_time = target_duration * 0.8  # 80% for main content
+
+        if high_priority_sections and medium_priority_sections:
+            # Allocate 60% to high priority, 40% to medium priority
+            high_priority_time = available_main_time * 0.6
+            medium_priority_time = available_main_time * 0.4
+
+            # Redistribute within each group
+            for section in high_priority_sections:
+                section["duration_minutes"] = round(
+                    high_priority_time / len(high_priority_sections), 1
+                )
+
+            for section in medium_priority_sections:
+                section["duration_minutes"] = round(
+                    medium_priority_time / len(medium_priority_sections), 1
+                )
+
+        # Recalculate metadata
+        content_plan["planning_metadata"]["duration_allocation"] = (
+            self._calculate_duration_allocation(content_plan)
+        )
+
+        return content_plan
 
     def validate_content_plan(self, content_plan: Dict[str, Any]) -> Dict[str, Any]:
         """Validate content plan structure and quality"""

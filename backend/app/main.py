@@ -35,7 +35,6 @@ from app.api import (
     audio,
     websocket,
     error_monitoring,
-    quality,
 )
 
 # Load environment variables
@@ -76,7 +75,6 @@ app.include_router(ai_pipeline.router)
 app.include_router(storage.router)
 app.include_router(audio.router)
 app.include_router(error_monitoring.router, prefix="/api/errors")
-app.include_router(quality.router)
 
 # Include WebSocket routes
 app.include_router(websocket.router)

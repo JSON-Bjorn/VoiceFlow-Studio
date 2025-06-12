@@ -376,3 +376,4 @@ DEVELOPMENT.md
 frontend/e2e/
 .cursor/
 backend/tests/
+OPTIMIZATION_REPORT.md

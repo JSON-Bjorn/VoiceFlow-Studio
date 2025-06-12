@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional, Any
 from .openai_service import OpenAIService
+from .duration_calculator import DurationCalculator
 import logging
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ class ConversationFlowAgent:
 
     def __init__(self):
         self.openai_service = OpenAIService()
+        self.duration_calculator = DurationCalculator()
 
     def polish_conversation_flow(
         self,
@@ -711,9 +713,26 @@ class ConversationFlowAgent:
             transition_elements = segment.get("transition_elements", [])
             metadata["transition_bridges"] += len(transition_elements)
 
-        # Estimate duration (150 words per minute average)
+        # Estimate duration using advanced duration calculator
         if metadata["total_words"] > 0:
-            metadata["estimated_duration"] = metadata["total_words"] / 150
+            # Collect all dialogue for duration calculation
+            all_dialogue = []
+            for segment in polished_segments:
+                polished_dialogue = segment.get("polished_dialogue", [])
+                all_dialogue.extend(polished_dialogue)
+
+            # Use advanced duration calculator for more accurate estimation
+            duration_result = self.duration_calculator.estimate_dialogue_duration(
+                all_dialogue, conversation_style="conversational"
+            )
+
+            metadata["estimated_duration"] = duration_result["estimated_duration"]
+            metadata["duration_breakdown"] = duration_result
+            metadata["speech_time_minutes"] = duration_result["speech_time_minutes"]
+            metadata["pause_time_minutes"] = duration_result["pause_time_minutes"]
+            metadata["flow_adjustment_factor"] = duration_result[
+                "flow_adjustment_factor"
+            ]
 
         return metadata
 

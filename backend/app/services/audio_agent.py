@@ -312,49 +312,53 @@ class AudioAgent:
         return PYDUB_AVAILABLE
 
     async def health_check(self) -> Dict[str, Any]:
-        """Perform health check for Audio Agent"""
+        """
+        Check the health and availability of the Audio Agent
+
+        Returns:
+            Health status information
+        """
         health_status = {
             "agent": self.agent_name,
-            "type": self.agent_type,
             "version": self.version,
-            "status": "unknown",
-            "timestamp": datetime.utcnow().isoformat(),
-            "details": {},
+            "status": "healthy",
+            "dependencies": {"pydub": PYDUB_AVAILABLE},
+            "capabilities": {
+                "audio_assembly": PYDUB_AVAILABLE,
+                "effects_processing": PYDUB_AVAILABLE,
+                "music_integration": PYDUB_AVAILABLE,
+            },
+            "settings": {
+                "default_format": self.default_format,
+                "default_bitrate": self.default_bitrate,
+                "default_sample_rate": self.default_sample_rate,
+                "normalization": self.normalize_audio,
+                "compression": self.apply_compression,
+            },
+            "last_check": datetime.utcnow().isoformat(),
         }
 
         try:
-            if not self.is_available():
+            # Check if we can create audio segments (requires pydub)
+            if PYDUB_AVAILABLE:
+                test_audio = AudioSegment.silent(duration=100)  # 100ms silence
                 health_status.update(
                     {
-                        "status": "warning",
-                        "details": {
-                            "pydub_available": False,
-                            "error": "PyDub not available - audio processing limited",
-                            "recommendation": "Install PyDub: pip install pydub",
+                        "status": "healthy",
+                        "test_results": {
+                            "audio_creation": True,
+                            "audio_processing": len(test_audio) == 100,
                         },
                     }
                 )
-                return health_status
-
-            # Test basic audio processing
-            test_audio = AudioSegment.silent(duration=100)  # 100ms silence
-
-            health_status.update(
-                {
-                    "status": "healthy",
-                    "details": {
-                        "pydub_available": True,
-                        "supported_formats": ["mp3", "wav", "m4a", "ogg"],
-                        "audio_processing_enabled": True,
-                        "default_settings": {
-                            "format": self.default_format,
-                            "bitrate": self.default_bitrate,
-                            "sample_rate": self.default_sample_rate,
-                            "channels": self.default_channels,
-                        },
-                    },
-                }
-            )
+            else:
+                health_status.update(
+                    {
+                        "status": "limited",
+                        "details": {"reason": "PyDub not available"},
+                        "test_results": {"audio_creation": False},
+                    }
+                )
 
         except Exception as e:
             health_status.update(
@@ -365,6 +369,58 @@ class AudioAgent:
             )
 
         return health_status
+
+    async def assemble_podcast(
+        self,
+        segments: List[Dict[str, Any]],
+        podcast_id: str,
+        audio_options: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Assemble voice segments into a complete podcast episode
+
+        This is an alias for assemble_podcast_episode that matches the interface
+        expected by the Enhanced Pipeline Orchestrator.
+
+        Args:
+            segments: List of voice segment data with file paths
+            podcast_id: Podcast identifier
+            audio_options: Optional audio processing options (intro/outro, effects, etc.)
+
+        Returns:
+            Dict with success status and assembled audio data
+        """
+        try:
+            # Call the main assembly method
+            result = await self.assemble_podcast_episode(
+                voice_segments=segments,
+                podcast_id=podcast_id,
+                episode_metadata=None,
+                audio_options=audio_options,
+            )
+
+            # Convert AudioProcessingResult to expected dict format
+            return {
+                "success": result.success,
+                "data": {
+                    "final_audio_path": result.final_audio_path,
+                    "final_audio_url": result.final_audio_url,
+                    "duration": result.total_duration,
+                    "file_size": result.file_size_bytes,
+                    "processing_time": result.processing_time,
+                    "segments_processed": result.segments_processed,
+                    "metadata": result.metadata,
+                },
+                "error": result.error_message if not result.success else None,
+            }
+
+        except Exception as e:
+            logger.error(f"Podcast assembly failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "data": None,
+            }
 
     async def assemble_podcast_episode(
         self,

@@ -1,5 +1,7 @@
 from typing import Dict, List, Optional, Any
 from .openai_service import OpenAIService
+from .content_depth_analyzer import ContentDepthAnalyzer
+from .duration_calculator import DurationCalculator
 import logging
 
 logger = logging.getLogger(__name__)
@@ -18,6 +20,8 @@ class ResearchAgent:
 
     def __init__(self):
         self.openai_service = OpenAIService()
+        self.content_analyzer = ContentDepthAnalyzer()
+        self.duration_calculator = DurationCalculator()
 
     def research_topic(
         self, main_topic: str, target_length: int = 10, depth: str = "standard"
@@ -47,7 +51,19 @@ class ResearchAgent:
             return None
 
         # Enhance research with additional context if needed
-        enhanced_research = self._enhance_research(research_data, depth)
+        enhanced_research = self._enhance_research(research_data, depth, target_length)
+
+        # Validate content depth for target duration
+        depth_analysis = self.content_analyzer.analyze_topic_depth(
+            enhanced_research, target_length
+        )
+
+        # If content is insufficient, expand research
+        if depth_analysis["needs_expansion"]:
+            logger.info(f"Content expansion needed for {target_length}min target")
+            enhanced_research = self._expand_research_for_duration(
+                enhanced_research, depth_analysis, target_length
+            )
 
         logger.info(f"Research completed for topic: {main_topic}")
         return enhanced_research
@@ -62,7 +78,7 @@ class ResearchAgent:
         return min(base_subtopics.get(depth, 3), 6)  # Cap at 6 subtopics
 
     def _enhance_research(
-        self, research_data: Dict[str, Any], depth: str
+        self, research_data: Dict[str, Any], depth: str, target_length: int = 10
     ) -> Dict[str, Any]:
         """
         Enhance research data with additional context and structure
@@ -77,12 +93,21 @@ class ResearchAgent:
         if not research_data:
             return research_data
 
+        # Calculate content requirements for target duration
+        content_requirements = (
+            self.duration_calculator.estimate_required_content_for_duration(
+                target_length, "conversational"
+            )
+        )
+
         # Add metadata
         research_data["research_metadata"] = {
             "depth_level": depth,
+            "target_length": target_length,
             "generated_at": None,  # Will be set by the calling service
             "subtopic_count": len(research_data.get("subtopics", [])),
             "estimated_research_quality": self._assess_research_quality(research_data),
+            "content_requirements": content_requirements,
         }
 
         # Enhance subtopics with additional structure
@@ -200,6 +225,279 @@ class ResearchAgent:
         )
 
         return validation_result
+
+    def _expand_research_for_duration(
+        self,
+        research_data: Dict[str, Any],
+        depth_analysis: Dict[str, Any],
+        target_duration: float,
+    ) -> Dict[str, Any]:
+        """
+        Expand research data to meet target duration requirements
+
+        Args:
+            research_data: Current research data
+            depth_analysis: Analysis from ContentDepthAnalyzer
+            target_duration: Target duration in minutes
+
+        Returns:
+            Expanded research data
+        """
+
+        logger.info(f"Expanding research for {target_duration}min target duration")
+
+        # Get expansion recommendations with safety checks
+        expansion_recommendations = depth_analysis.get("expansion_recommendations", [])
+        word_deficit = depth_analysis.get("analysis_summary", {}).get("word_deficit", 0)
+
+        # Expand existing subtopics
+        if "subtopics" in research_data:
+            self._expand_existing_subtopics(
+                research_data["subtopics"], expansion_recommendations
+            )
+
+        # Add new research sections if major expansion is needed
+        if word_deficit > 300:
+            self._add_additional_research_sections(
+                research_data, expansion_recommendations, target_duration
+            )
+
+        # Add enhanced key points
+        if "key_points" not in research_data:
+            research_data["key_points"] = []
+
+        self._expand_key_points(research_data, expansion_recommendations)
+
+        # Update metadata to reflect expansion
+        if "research_metadata" not in research_data:
+            research_data["research_metadata"] = {}
+        research_data["research_metadata"]["expanded_for_duration"] = True
+        research_data["research_metadata"]["expansion_applied"] = [
+            rec.get("description", "expansion applied")
+            for rec in expansion_recommendations[:3]
+        ]
+
+        # Re-analyze content depth after expansion
+        final_analysis = self.content_analyzer.analyze_topic_depth(
+            research_data, target_duration
+        )
+        research_data["final_content_analysis"] = final_analysis
+
+        logger.info(
+            f"Research expansion completed. New completeness: {final_analysis['analysis_summary']['completeness_percentage']}%"
+        )
+
+        return research_data
+
+    def _expand_existing_subtopics(
+        self, subtopics: List[Dict[str, Any]], recommendations: List[Dict[str, Any]]
+    ) -> None:
+        """Expand existing subtopics with more detailed content"""
+
+        for subtopic in subtopics:
+            # Add more key facts
+            if "key_facts" not in subtopic:
+                subtopic["key_facts"] = []
+
+            # Expand based on recommendations
+            for rec in recommendations:
+                rec_type = rec.get("type", "")
+                rec_description = rec.get("description", "")
+
+                if rec_type == "content_type_addition":
+                    if "examples" in rec_description:
+                        if "examples" not in subtopic:
+                            subtopic["examples"] = []
+                        subtopic["examples"].extend(
+                            [
+                                f"Example related to {subtopic.get('title', 'this topic')}",
+                                f"Case study demonstrating {subtopic.get('title', 'this concept')}",
+                            ]
+                        )
+
+                    if "analysis" in rec_description:
+                        if "deeper_analysis" not in subtopic:
+                            subtopic["deeper_analysis"] = []
+                        subtopic["deeper_analysis"].extend(
+                            [
+                                f"Technical analysis of {subtopic.get('title', 'this topic')}",
+                                f"Implications and consequences of {subtopic.get('title', 'this development')}",
+                            ]
+                        )
+
+                elif rec_type == "quality_improvement":
+                    if "statistics" in rec_description:
+                        if "statistics" not in subtopic:
+                            subtopic["statistics"] = []
+                        subtopic["statistics"].extend(
+                            [
+                                f"Key statistics related to {subtopic.get('title', 'this topic')}",
+                                f"Market data and trends for {subtopic.get('title', 'this area')}",
+                            ]
+                        )
+
+    def _add_additional_research_sections(
+        self,
+        research_data: Dict[str, Any],
+        recommendations: List[Dict[str, Any]],
+        target_duration: float,
+    ) -> None:
+        """Add additional research sections for major content expansion"""
+
+        if "research_sections" not in research_data:
+            research_data["research_sections"] = []
+
+        # Add background context section
+        research_data["research_sections"].append(
+            {
+                "title": "Background and Context",
+                "content": f"Historical background and context for {research_data.get('main_topic', 'the topic')}",
+                "summary": "Provides foundational understanding and historical perspective",
+                "content_type": "background",
+            }
+        )
+
+        # Add expert perspectives section
+        research_data["research_sections"].append(
+            {
+                "title": "Expert Insights and Analysis",
+                "content": f"Expert opinions and professional analysis of {research_data.get('main_topic', 'the topic')}",
+                "summary": "Professional insights and expert commentary",
+                "content_type": "expert_analysis",
+            }
+        )
+
+        # Add implications section for longer content
+        if target_duration > 8:
+            research_data["research_sections"].append(
+                {
+                    "title": "Future Implications and Trends",
+                    "content": f"Future implications and emerging trends related to {research_data.get('main_topic', 'the topic')}",
+                    "summary": "Forward-looking analysis and trend predictions",
+                    "content_type": "future_analysis",
+                }
+            )
+
+    def _expand_key_points(
+        self, research_data: Dict[str, Any], recommendations: List[Dict[str, Any]]
+    ) -> None:
+        """Expand key points with additional content"""
+
+        main_topic = research_data.get("main_topic", "the topic")
+
+        # Add content-type specific key points
+        for rec in recommendations:
+            rec_priority = rec.get("priority", "low")
+            rec_description = rec.get("description", "")
+
+            if rec_priority in ["high", "medium"]:
+                if "examples" in rec_description:
+                    research_data["key_points"].extend(
+                        [
+                            f"Real-world example: How {main_topic} impacts everyday life",
+                            f"Case study: Successful implementation of {main_topic}",
+                            f"Practical demonstration: {main_topic} in action",
+                        ]
+                    )
+
+                if "analysis" in rec_description:
+                    research_data["key_points"].extend(
+                        [
+                            f"Technical analysis: The mechanics behind {main_topic}",
+                            f"Critical evaluation: Benefits and drawbacks of {main_topic}",
+                            f"Comparative analysis: {main_topic} vs alternatives",
+                        ]
+                    )
+
+                if "statistics" in rec_description:
+                    research_data["key_points"].extend(
+                        [
+                            f"Key statistic: Market size and growth for {main_topic}",
+                            f"Performance metrics: Success rates in {main_topic}",
+                            f"Trend data: {main_topic} adoption over time",
+                        ]
+                    )
+
+    def research_with_duration_target(
+        self,
+        main_topic: str,
+        target_duration: float,
+        depth: str = "moderate_depth",
+        quality_threshold: float = 80.0,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Research topic with specific duration target and quality requirements
+
+        Args:
+            main_topic: Topic to research
+            target_duration: Target duration in minutes
+            depth: Research depth level
+            quality_threshold: Minimum content completeness percentage
+
+        Returns:
+            Research data that meets duration and quality requirements
+        """
+
+        logger.info(
+            f"Starting duration-targeted research: {main_topic} for {target_duration}min"
+        )
+
+        # Initial research
+        research_data = self.research_topic(main_topic, int(target_duration), depth)
+
+        if not research_data:
+            return None
+
+        # Iterative improvement to meet quality threshold
+        max_iterations = 3
+        iteration = 0
+
+        while iteration < max_iterations:
+            # Analyze content depth
+            depth_analysis = self.content_analyzer.analyze_topic_depth(
+                research_data, target_duration, depth
+            )
+
+            completeness = depth_analysis["analysis_summary"]["completeness_percentage"]
+
+            if completeness >= quality_threshold:
+                logger.info(
+                    f"Quality threshold met: {completeness}% >= {quality_threshold}%"
+                )
+                break
+
+            # Expand research for better quality
+            logger.info(
+                f"Iteration {iteration + 1}: Expanding research (current: {completeness}%)"
+            )
+            research_data = self._expand_research_for_duration(
+                research_data, depth_analysis, target_duration
+            )
+
+            iteration += 1
+
+        # Final validation
+        final_analysis = self.content_analyzer.analyze_topic_depth(
+            research_data, target_duration, depth
+        )
+        research_data["duration_readiness"] = {
+            "target_duration": target_duration,
+            "final_completeness": final_analysis["analysis_summary"][
+                "completeness_percentage"
+            ],
+            "meets_threshold": final_analysis["analysis_summary"][
+                "completeness_percentage"
+            ]
+            >= quality_threshold,
+            "iterations_used": iteration,
+            "ready_for_script_generation": final_analysis["ready_for_generation"],
+        }
+
+        logger.info(
+            f"Duration-targeted research completed. Final quality: {final_analysis['analysis_summary']['completeness_percentage']}%"
+        )
+
+        return research_data
 
     def get_research_summary(self, research_data: Dict[str, Any]) -> str:
         """Generate a human-readable summary of the research"""

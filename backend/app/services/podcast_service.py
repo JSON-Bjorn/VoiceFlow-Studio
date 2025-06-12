@@ -6,6 +6,7 @@ from ..models.user import User
 from ..schemas.podcast import PodcastCreate, PodcastUpdate, PodcastSummary
 from ..services.credit_service import CreditService
 import math
+from datetime import datetime
 
 
 class PodcastService:
@@ -236,3 +237,77 @@ class PodcastService:
 
         self.db.commit()
         return True
+
+    def update_podcast_content(
+        self, podcast_id: int, script_content: dict, user_id: Optional[int] = None
+    ) -> bool:
+        """
+        Update podcast content with generated script and metadata
+
+        Args:
+            podcast_id: ID of the podcast to update
+            script_content: Dictionary containing script data, title, segments, etc.
+            user_id: Optional user ID for access validation
+
+        Returns:
+            bool: True if update was successful, False otherwise
+        """
+        try:
+            query = self.db.query(Podcast).filter(Podcast.id == podcast_id)
+
+            # If user_id is provided, ensure the podcast belongs to the user
+            if user_id is not None:
+                query = query.filter(Podcast.user_id == user_id)
+
+            podcast = query.first()
+            if not podcast:
+                return False
+
+            # Update podcast with script content
+            if script_content.get("title"):
+                podcast.title = script_content["title"]
+
+            # Convert segments to script text if available
+            if script_content.get("segments"):
+                segments = script_content["segments"]
+                script_text = ""
+
+                for segment in segments:
+                    speaker = segment.get("speaker", "Speaker")
+                    text = segment.get("text", "")
+                    script_text += f"{speaker}: {text}\n\n"
+
+                podcast.script = script_text.strip()
+
+            # Update estimated duration if available
+            if script_content.get("estimated_duration"):
+                # Convert minutes to integer if needed
+                duration = script_content["estimated_duration"]
+                if isinstance(duration, (int, float)):
+                    podcast.length = int(duration)
+
+            # Store additional metadata in voice_settings field (reusing existing JSON field)
+            if not podcast.voice_settings:
+                podcast.voice_settings = {}
+
+            podcast.voice_settings.update(
+                {
+                    "generation_metadata": script_content.get(
+                        "generation_metadata", {}
+                    ),
+                    "script_metadata": script_content.get("script_metadata", {}),
+                    "validation": script_content.get("validation", {}),
+                    "last_updated": datetime.utcnow().isoformat(),
+                }
+            )
+
+            self.db.commit()
+            return True
+
+        except Exception as e:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to update podcast content: {e}")
+            self.db.rollback()
+            return False

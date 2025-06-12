@@ -142,16 +142,42 @@ class OpenAIService:
         if not host_personalities:
             host_personalities = {
                 "host_1": {
-                    "name": "Bjorn",
+                    "name": "Host 1",
                     "personality": "analytical and engaging",
                     "role": "primary_questioner",
                 },
                 "host_2": {
-                    "name": "Felix",
+                    "name": "Host 2",
                     "personality": "warm and curious",
                     "role": "storyteller",
                 },
             }
+
+        # Extract host names dynamically from the provided personalities
+        host_names = []
+        for host_key in ["host_1", "host_2"]:
+            if host_key in host_personalities:
+                host_names.append(
+                    host_personalities[host_key].get("name", f"Host {host_key[-1]}")
+                )
+            else:
+                host_names.append(f"Host {host_key[-1]}")
+
+        # Ensure we have exactly 2 hosts
+        if len(host_names) < 2:
+            host_names.extend([f"Host {i + 1}" for i in range(len(host_names), 2)])
+
+        # Debug logging to trace host names
+        logger.info(
+            f"🎭 OpenAI Service: Generating script with host names: {host_names}"
+        )
+        logger.info(
+            f"🎭 OpenAI Service: Host personalities received: {list(host_personalities.keys()) if host_personalities else 'None'}"
+        )
+        for host_key, host_data in host_personalities.items():
+            logger.info(
+                f"🎭 OpenAI Service: {host_key} -> name: '{host_data.get('name', 'NO NAME')}', personality: '{host_data.get('personality', 'NO PERSONALITY')}'"
+            )
 
         prompt = f"""
         You are a podcast script writer. Create a natural, engaging {target_length}-minute podcast script based on this research:
@@ -162,12 +188,19 @@ class OpenAIService:
         HOST PERSONALITIES:
         {json.dumps(host_personalities, indent=2)}
 
+        IMPORTANT: The hosts are named {host_names[0]} and {host_names[1]}. They should naturally reference each other by name during conversation, especially when:
+        - Responding to each other's points
+        - Asking follow-up questions  
+        - Building on each other's ideas
+        - Transitioning between topics
+
         Create a script with:
-        1. Natural intro (30-60 seconds)
+        1. Natural intro (30-60 seconds) where hosts introduce themselves and each other
         2. Main content segments covering each subtopic
         3. Smooth transitions between topics
         4. Natural outro (30-60 seconds)
         5. Realistic dialogue that matches each host's personality
+        6. Hosts addressing each other by name throughout the conversation
 
         Format as JSON:
         {{
@@ -178,12 +211,12 @@ class OpenAIService:
                     "type": "intro",
                     "duration_estimate": 1,
                     "dialogue": [
-                        {{"speaker": "Bjorn", "text": "Welcome to our show..."}},
-                        {{"speaker": "Felix", "text": "Today we're exploring..."}},
-                        {{"speaker": "Bjorn", "text": "That's fascinating..."}},
-                        {{"speaker": "Felix", "text": "Let me break that down..."}},
-                        {{"speaker": "Bjorn", "text": "So let's start with..."}},
-                        {{"speaker": "Felix", "text": "That's really interesting because..."}}
+                        {{"speaker": "{host_names[0]}", "text": "Welcome to our show, I'm {host_names[0]}..."}},
+                        {{"speaker": "{host_names[1]}", "text": "And I'm {host_names[1]}. Today we're exploring..."}},
+                        {{"speaker": "{host_names[0]}", "text": "That's right, {host_names[1]}. This topic is fascinating..."}},
+                        {{"speaker": "{host_names[1]}", "text": "Absolutely, {host_names[0]}. Let me break that down..."}},
+                        {{"speaker": "{host_names[0]}", "text": "So {host_names[1]}, let's start with..."}},
+                        {{"speaker": "{host_names[1]}", "text": "Great point, {host_names[0]}. That's really interesting because..."}}
                     ]
                 }},
                 {{
@@ -191,14 +224,15 @@ class OpenAIService:
                     "subtopic": "Subtopic Title",
                     "duration_estimate": 3,
                     "dialogue": [
-                        {{"speaker": "Bjorn", "text": "So let's start with..."}},
-                        {{"speaker": "Felix", "text": "That's really interesting because..."}}
+                        {{"speaker": "{host_names[0]}", "text": "So {host_names[1]}, let's dive into..."}},
+                        {{"speaker": "{host_names[1]}", "text": "You know what, {host_names[0]}, that's really interesting because..."}}
                     ]
                 }}
             ]
         }}
 
         Make the conversation feel natural and spontaneous, not scripted. Include natural speech patterns, interruptions, and reactions.
+        CRITICAL: Have the hosts regularly use each other's names ({host_names[0]} and {host_names[1]}) throughout the dialogue to create a more personal, engaging conversation. This should feel natural, not forced.
         """
 
         messages = [

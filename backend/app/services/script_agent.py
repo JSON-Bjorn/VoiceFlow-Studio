@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional, Any
 from .openai_service import OpenAIService
 from .voice_name_resolver import VoiceNameResolver
+from .duration_calculator import DurationCalculator
 import logging
 import json
 
@@ -20,6 +21,7 @@ class ScriptAgent:
 
     def __init__(self):
         self.openai_service = OpenAIService()
+        self.duration_calculator = DurationCalculator()
         # Remove hardcoded names - will get names dynamically from voice profiles
         self.default_hosts = {
             "host_1": {
@@ -169,7 +171,9 @@ class ScriptAgent:
             return None
 
         # Enhance script with additional metadata and structure
-        enhanced_script = self._enhance_script(script_data, research_data, style)
+        enhanced_script = self._enhance_script(
+            script_data, research_data, style, target_length
+        )
 
         # Add voice resolution metadata for debugging and validation
         enhanced_script["voice_resolution_metadata"] = {
@@ -183,7 +187,30 @@ class ScriptAgent:
             else {},
         }
 
-        logger.info("Script generation completed with voice-based speaker names")
+        # Add duration validation
+        if "segments" in enhanced_script:
+            all_dialogue = []
+            for segment in enhanced_script["segments"]:
+                all_dialogue.extend(segment.get("dialogue", []))
+
+            duration_validation = self.duration_calculator.validate_duration_accuracy(
+                all_dialogue, target_length, tolerance_percentage=15
+            )
+
+            enhanced_script["duration_validation"] = duration_validation
+            enhanced_script["estimated_duration"] = duration_validation[
+                "duration_analysis"
+            ]["estimated_duration"]
+
+            # Log duration accuracy
+            accuracy_info = duration_validation["duration_analysis"]["accuracy_info"]
+            logger.info(
+                f"Script duration: {accuracy_info['estimated_duration']:.1f}min (target: {target_length}min, accuracy: {accuracy_info['accuracy_percentage']:.1f}%)"
+            )
+
+        logger.info(
+            "Script generation completed with voice-based speaker names and duration validation"
+        )
         return enhanced_script
 
     def _apply_style_preferences(
@@ -209,6 +236,7 @@ class ScriptAgent:
         script_data: Dict[str, Any],
         research_data: Dict[str, Any],
         style: Dict[str, Any],
+        target_length: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Enhance script with additional metadata and structure
@@ -236,26 +264,36 @@ class ScriptAgent:
 
         # Enhance segments with additional data
         if "segments" in script_data:
+            segment_target_duration = (
+                target_length / len(script_data["segments"])
+                if target_length and script_data["segments"]
+                else None
+            )
             for segment in script_data["segments"]:
-                self._enhance_segment(segment)
+                self._enhance_segment(segment, segment_target_duration)
 
         return script_data
 
-    def _enhance_segment(self, segment: Dict[str, Any]) -> None:
+    def _enhance_segment(
+        self, segment: Dict[str, Any], target_duration: Optional[float] = None
+    ) -> None:
         """Enhance individual segment with metadata"""
         if "dialogue" not in segment:
             return
 
         dialogue = segment["dialogue"]
 
-        # Add segment metadata
+        # Add segment metadata with enhanced duration analysis
+        duration_result = self.duration_calculator.estimate_dialogue_duration(
+            dialogue, target_duration=target_duration
+        )
+
         segment["segment_metadata"] = {
             "line_count": len(dialogue),
-            "estimated_words": sum(
-                len(line.get("text", "").split()) for line in dialogue
-            ),
+            "estimated_words": duration_result["word_count"],
             "speaker_distribution": self._get_speaker_distribution(dialogue),
-            "estimated_reading_time": self._estimate_reading_time(dialogue),
+            "estimated_reading_time": duration_result["estimated_duration"],
+            "duration_breakdown": duration_result,
         }
 
     def _estimate_word_count(self, script_data: Dict[str, Any]) -> int:
@@ -291,10 +329,14 @@ class ScriptAgent:
             distribution[speaker] = distribution.get(speaker, 0) + 1
         return distribution
 
-    def _estimate_reading_time(self, dialogue: List[Dict[str, Any]]) -> float:
-        """Estimate reading time for dialogue (assuming 150 words per minute)"""
-        total_words = sum(len(line.get("text", "").split()) for line in dialogue)
-        return round(total_words / 150, 1)  # 150 WPM average speaking rate
+    def _estimate_reading_time(
+        self, dialogue: List[Dict[str, Any]], target_duration: Optional[float] = None
+    ) -> float:
+        """Estimate reading time for dialogue using advanced duration calculator"""
+        duration_result = self.duration_calculator.estimate_dialogue_duration(
+            dialogue, target_duration=target_duration
+        )
+        return duration_result["estimated_duration"]
 
     def _calculate_quality_metrics(self, script_data: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate quality metrics for the script"""
