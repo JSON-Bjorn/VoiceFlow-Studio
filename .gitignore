@@ -364,17 +364,8 @@ docker-compose*.yml
 # =====================================================
 # Custom
 # =====================================================
-tasks.txt
-strategy.txt
-prd.txt
-setup
-PYTHON_313_COMPATIBILITY.md
-ULTIMATE_CHATTERBOX_IMPLEMENTATION.md
-CHATTERBOX_TTS_KNOWLEDGEBASE.md
-CHATTERBOX_QUICK_REFERENCE.md
-DEVELOPMENT.md
 frontend/e2e/
 .cursor/
 backend/tests/
-OPTIMIZATION_REPORT.md
 ignorethis/
+knowledgebase/
