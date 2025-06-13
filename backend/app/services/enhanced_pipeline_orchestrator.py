@@ -108,8 +108,8 @@ class EnhancedPipelineOrchestrator:
             "minimum_coherence_score": 0.75,
             "content_plan_quality": 0.7,
             "maximum_iterations": 3,
-            "target_script_length_variance": 0.15,  # 15% variance allowed
-            "duration_accuracy_threshold": 85.0,  # 85% accuracy required
+            "target_script_length_variance": 0.15,  # 15% variance
+            "duration_accuracy_threshold": 85.0,  # 85% accuracy
             "content_completeness_threshold": 80.0,  # 80% content completeness required
         }
 
