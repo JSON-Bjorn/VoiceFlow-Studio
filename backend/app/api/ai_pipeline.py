@@ -366,21 +366,12 @@ async def generate_enhanced_podcast(
                     "target_audience": "general public",
                 },
             ),
-            "audio_options": custom_settings.get(
-                "audio_options",
-                {
-                    "add_intro": True,
-                    "add_outro": True,
-                    "intro_style": "overlay",
-                    "outro_style": "overlay",
-                    "intro_asset_id": "default_intro",
-                    "outro_asset_id": "default_outro",
-                    "add_transitions": False,
-                    "transition_asset_id": "default_transition",
-                    "add_background_music": False,
-                    "background_asset_id": "",
-                },
-            ),
+            "audio_options": {
+                **custom_settings.get("audio_options", {}),
+                "add_intro": False,
+                "add_outro": False,
+                "add_background_music": False,
+            },
         }
 
         # 🌐 DEBUG: Log incoming request data
