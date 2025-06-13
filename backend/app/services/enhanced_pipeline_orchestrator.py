@@ -167,6 +167,13 @@ class EnhancedPipelineOrchestrator:
                         host_config["voice_id"]
                     )
 
+                    # If database lookup fails, extract a clean name from the voice_id
+                    if not actual_voice_name:
+                        actual_voice_name = self._extract_clean_name_from_voice_id(
+                            host_config["voice_id"],
+                            host_config.get("name", f"Host {host_id.split('_')[-1]}"),
+                        )
+
                     voice_profiles[host_id] = {
                         "voice_id": host_config["voice_id"],
                         "name": actual_voice_name
@@ -3558,3 +3565,25 @@ class EnhancedPipelineOrchestrator:
                 "podcast_id": podcast_id,
                 "user_id": user_id,
             }
+
+    # Add this static method for clean name extraction
+    @staticmethod
+    def _extract_clean_name_from_voice_id(
+        voice_id: str, fallback_name: str = "Host"
+    ) -> str:
+        """
+        Extract a clean, human-friendly name from a voice_id string.
+        Mimics the logic in VoiceAgent.get_clean_speaker_names.
+        """
+        if not voice_id:
+            return fallback_name
+        if voice_id.startswith("system_") and "_" in voice_id:
+            parts = voice_id.split("_")
+            if len(parts) >= 2:
+                return parts[1].capitalize()
+            else:
+                return fallback_name
+        elif "_" in voice_id and not voice_id.startswith("system_"):
+            return voice_id.split("_")[0].capitalize()
+        else:
+            return voice_id.capitalize()
