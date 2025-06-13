@@ -106,7 +106,7 @@ Content creators, marketing teams, educators, enterprises, and anyone seeking ra
 4. **Start Backend**
    ```bash
    cd backend
-   uvicorn app.main:app --reload
+   python run.py
    ```
 
 5. **Access the App**
